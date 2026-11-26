@@ -1394,9 +1394,10 @@ html:not(.phone) .cvbar .btn{padding:6px 12px}
 /* M2 Week */
 /* each band row is as tall as the fullest day that week (subgrid), so days line up and empty bands take no room; Tasks get the rest */
 /* Week fits the window and never scrolls (27 Nov 2026, the user's request: "Calendar should not scroll, make it resize"): Due and
-   Classes & events take what they need up to a quarter and a third of the height, Tasks the rest; a band with more scrolls
-   inside itself. Narrow or short windows switch to compact type (media rules after the M2 block). */
-.mx-wk{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));grid-template-rows:auto fit-content(24%) fit-content(32%) minmax(0,1fr);border-top:1px solid var(--ink);height:max(360px,calc(100vh - 210px));overflow-wrap:break-word}
+   Classes & events take what they need, at most 18 % and 26 % of the window height (vh: WebKit collapsed fit-content rows
+   in a subgrid to nothing), Tasks the rest; a band with more scrolls inside itself. Narrow or short windows switch to
+   compact type (media rules after the M2 block). */
+.mx-wk{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));grid-template-rows:auto auto auto minmax(0,1fr);border-top:1px solid var(--ink);height:max(360px,calc(100vh - 210px));overflow-wrap:break-word}
 /* Week and Month fit the window: no page scroll (26 Nov 2026, the user's report: "some pages are scrollable when they are not needed") */
 html:not(.phone) .wrap:has(.mx-wk),html:not(.phone) .wrap:has(.mx-mo){padding-bottom:0}
 .mx-wd{border-left:1px solid var(--rule);padding:0 10px;display:grid;grid-row:1 / 5;grid-template-rows:subgrid;min-height:0;min-width:0}
@@ -1414,7 +1415,7 @@ html:not(.phone) .wrap:has(.mx-wk),html:not(.phone) .wrap:has(.mx-mo){padding-bo
 .lh .hv{color:var(--red);font-weight:600}
 .mx-wd .band:first-child{overflow:visible}
 .mx-wd .pcarry{display:flex;gap:6px;align-items:center;font-size:12px;color:var(--red);text-decoration:none;margin-bottom:4px}.mx-wd .pcarry svg{width:12px;height:12px}
-.mx-wd .b-due,.mx-wd .b-ev{min-height:0}.mx-wd .b-tk{border-bottom:0;min-height:0}
+.mx-wd .b-due{max-height:18vh}.mx-wd .b-ev{max-height:26vh}.mx-wd .b-tk{border-bottom:0;min-height:0}
 .bl{font-size:11px;color:var(--ink-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:6px;display:flex;justify-content:space-between;gap:4px}
 .bl .lnk{font:500 14px/1 var(--sans);text-decoration:none;padding:0 2px}
 .mx-wd .empty{font-size:12px;color:var(--ink-3);padding:0}

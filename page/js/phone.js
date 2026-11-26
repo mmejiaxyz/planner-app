@@ -224,7 +224,7 @@ function phByCourse(open){
       const fs = (FILES[c.id]||[]).filter(f=>/\.pdf$/i.test(f));
       if(fs.length){
         h += '<button class="ph-files" data-phfiles="1"><span>'+PH_ICON.file+'Readings · '+fs.length+' PDF'+(fs.length===1?'':'s')+'</span>'+(T.files?PH_ICON.up:PH_ICON.down)+'</button>';
-        if(T.files) h += '<ul class="ph-flist">'+fs.map(f=>{ const x = ((PFILES[c.id]||[]).find(y=>y.f===f))||{}; return '<li><button data-file="'+esc(fileRef(c,f))+'" data-ctx="'+esc(c.id+'|')+'">'+esc(f.split('/').pop().replace(/\.pdf$/i,''))+'</button>'+(x.reading?'<span>text</span>':x.cached?'<span>on the phone</span>':'<span class="muted">text coming<b class="ph-dl" aria-hidden="true"><i></i></b></span>')+'</li>'; }).join('')+'</ul>';
+        if(T.files) h += '<ul class="ph-flist">'+fs.map(f=>{ const x = ((PFILES[c.id]||[]).find(y=>y.f===f))||{}; return '<li><button data-file="'+esc(fileRef(c,f))+'" data-ctx="'+esc(c.id+'|')+'">'+esc(f.split('/').pop().replace(/\.pdf$/i,''))+'</button>'+(x.reading?'<span>text</span>':x.cached?'<span>on the phone</span>':'<span class="muted">on the Mac</span>')+'</li>'; }).join('')+'</ul>';
       }
       h += '</div>';
     }

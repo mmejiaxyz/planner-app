@@ -178,6 +178,15 @@ export class Box {
     if (path === "/snapshot" && m === "PUT") return this.putBlob("snap", request);
     if (path === "/web" && m === "GET") return this.getBlob("web", request);
     if (path === "/web" && m === "PUT") return this.putBlob("web", request);
+    // every transfer piece (PDF, text version and recording parts, au:/aub:) goes; the devices ask again for what they need.
+    // The snapshot, phone changes and the backup stay. The Mac calls it; ?confirm=all guards against a stray request.
+    if (path === "/parts/clear" && m === "POST") {
+      if (url.searchParams.get("confirm") !== "all") return text("add ?confirm=all", 400);
+      const before = (await this.s.get("audioBytes")) || 0;
+      await this.dropPrefix("au:"); await this.dropPrefix("aub:");
+      await this.s.put("audioBytes", 0);
+      return json({ cleared: before });
+    }
     // backup: the Mac's off-device copy of the data, read only by a Mac with the key (Restore)
     if (path.startsWith("/backup")) return this.backup(path, m, url, request);
 
