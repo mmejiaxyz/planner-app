@@ -37,6 +37,11 @@ anything generic below). Paths in them like `HANDOFF.md` or `design/` are in tha
   live data) and shows the recovery code (the pairing text: key, token, Worker). On a new Mac, Restore with a Recovery
   Code… adopts the key and, only when the plan is empty, puts plan and Brain notes in place and restarts. An empty plan is
   never uploaded as the phone's snapshot. Never add PDFs, project files, images or recordings.
+- This repo is public (since 27 Nov 2026). Commits are authored as "Planner"; scan every change for personal data before
+  pushing. The iPhone app's id is neutral (`PLANNER_PHONE_ID` in local.env) because the .ipa is public.
+- iPhone updates go through AltStore, not by hand: `ios-app/build.sh`, then `python3 tools/altstore.py` (writes
+  `altstore/source.json` and names the tag), `gh release create v<version> ios-app/build/Planner.ipa`, commit and push the
+  source file. AltStore reads https://raw.githubusercontent.com/<owner>/<repo>/main/altstore/source.json.
 - Never change plan.json in a way old data cannot load. Course documents carry `v` (`PLAN_VERSION`), upgraded by
   `MIGRATIONS` in main.js; the profile carries `v` (`PROFILE_V`).
 
