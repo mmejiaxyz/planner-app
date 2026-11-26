@@ -1,0 +1,31 @@
+{
+  "name": "Planner",
+  "identifier": "planner.app.source",
+  "website": "https://github.com/mmejiaxyz/planner-app",
+  "apps": [
+    {
+      "name": "Planner",
+      "bundleIdentifier": "planner.app.ios",
+      "developerName": "Planner",
+      "localizedDescription": "Personal software.",
+      "iconURL": "https://raw.githubusercontent.com/mmejiaxyz/planner-app/main/mac-app/AppIcon.png",
+      "tintColor": "#9579BF",
+      "versions": [
+        {
+          "version": "1.1",
+          "buildVersion": "1",
+          "date": "2026-11-26",
+          "downloadURL": "https://github.com/mmejiaxyz/planner-app/releases/download/v1.1/Planner.ipa",
+          "size": 783730,
+          "minOSVersion": "17.0",
+          "localizedDescription": "Update."
+        }
+      ],
+      "version": "1.1",
+      "versionDate": "2026-11-26",
+      "downloadURL": "https://github.com/mmejiaxyz/planner-app/releases/download/v1.1/Planner.ipa",
+      "size": 783730
+    }
+  ],
+  "news": []
+}
