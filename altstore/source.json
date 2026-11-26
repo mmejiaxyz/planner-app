@@ -12,19 +12,19 @@
       "tintColor": "#9579BF",
       "versions": [
         {
-          "version": "1.1",
-          "buildVersion": "1",
+          "version": "1.5",
+          "buildVersion": "5",
           "date": "2026-11-26",
-          "downloadURL": "https://github.com/mmejiaxyz/planner-app/releases/download/v1.1/Planner.ipa",
-          "size": 783730,
+          "downloadURL": "https://github.com/mmejiaxyz/planner-app/releases/download/v1.5/Planner.ipa",
+          "size": 784356,
           "minOSVersion": "17.0",
           "localizedDescription": "Update."
         }
       ],
-      "version": "1.1",
+      "version": "1.5",
       "versionDate": "2026-11-26",
-      "downloadURL": "https://github.com/mmejiaxyz/planner-app/releases/download/v1.1/Planner.ipa",
-      "size": 783730
+      "downloadURL": "https://github.com/mmejiaxyz/planner-app/releases/download/v1.5/Planner.ipa",
+      "size": 784356
     }
   ],
   "news": []
