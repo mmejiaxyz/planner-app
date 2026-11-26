@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key><string>Planner</string>
+  <key>CFBundleDisplayName</key><string>Planner</string>
+  <key>CFBundleIdentifier</key><string>local.planner</string>
+  <key>CFBundleExecutable</key><string>Planner</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>1.0</string>
+  <key>CFBundleVersion</key><string>1</string>
+  <key>LSMinimumSystemVersion</key><string>14.0</string>
+  <key>NSHighResolutionCapable</key><true/>
+  <key>NSPrincipalClass</key><string>NSApplication</string>
+  <key>NSCalendarsFullAccessUsageDescription</key><string>Shows your calendar events next to your classes and tasks and counts them in the daily load. Events change only when you add, edit or delete them in the planner.</string>
+  <key>NSCalendarsUsageDescription</key><string>Shows your calendar events next to your classes and tasks. Events change only when you add, edit or delete them in the planner.</string>
+  <key>NSRemindersFullAccessUsageDescription</key><string>Reads the "Planner" list in Reminders so notes you add on your iPhone show up here, and ticks them off once they are turned into tasks.</string>
+  <key>NSRemindersUsageDescription</key><string>Reads the "Planner" list in Reminders so notes you add on your iPhone show up here.</string>
+  <key>NSMicrophoneUsageDescription</key><string>Records your meetings so they can be transcribed on this Mac. Audio never leaves the computer.</string>
+  <key>NSScreenCaptureUsageDescription</key><string>Captures the computer's own audio during online calls so both sides of the conversation are recorded. No screen images are kept.</string>
+  <key>CFBundleURLTypes</key>
+  <array><dict><key>CFBundleURLName</key><string>Planner</string><key>CFBundleURLSchemes</key><array><string>planner</string></array></dict></array>
+  <key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/></dict>
+</dict>
+</plist>

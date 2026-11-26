@@ -1,0 +1,18 @@
+# Planner phone sync. See worker.js. Deploy and set the token with ./setup.sh.
+name = "planner-sync"
+main = "worker.js"
+compatibility_date = "2026-10-01"
+workers_dev = true
+preview_urls = false
+
+[[durable_objects.bindings]]
+name = "BOX"
+class_name = "Box"
+
+# SQLite-backed Durable Objects are the ones included in the Workers Free plan.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Box"]
+
+[observability]
+enabled = false

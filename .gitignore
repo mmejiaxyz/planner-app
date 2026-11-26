@@ -1,0 +1,15 @@
+.DS_Store
+*.zip
+.claude/
+.agents/
+.amp/
+skills-lock.json
+mac-app/build/
+ios-app/build/
+out/
+sync-worker/.wrangler/
+sync-worker/.dev.vars
+# personal data never goes in this repo: it lives in ../planner-data
+data/
+local.env
+profile.json
