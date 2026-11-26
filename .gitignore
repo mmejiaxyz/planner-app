@@ -13,3 +13,7 @@ sync-worker/.dev.vars
 data/
 local.env
 profile.json
+
+# project instructions for Claude Code stay on this Mac (personal notes are imported from ../planner-data)
+CLAUDE.md
+CLAUDE.local.md
