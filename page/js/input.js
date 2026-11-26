@@ -56,7 +56,7 @@ function redact(text, opts={}){
 function restore(text, map){ let t = String(text||''); Object.keys(map).sort((a,b)=>b.length-a.length).forEach(k=>{ const inner = k.slice(1,-1).replace(/ /g,'\\s*'); t = t.replace(new RegExp('\\[?'+inner+'\\]?(?!\\d)','g'), JSON.stringify(map[k]).slice(1,-1)); }); return t; }
 
 /* input field */
-/* Models (26 Nov 2026): Claude for planning, Gemini (Antigravity CLI) for summaries. The local model (Ollama) is gone, so with the Mac offline nothing is asked. */
+/* Models (26 Nov 2026): Claude only, through the Claude Code CLI. The local model (Ollama) and Gemini are gone, so with the Mac offline nothing is asked. */
 const offline = () => typeof navigator!=='undefined' && navigator.onLine===false;
 const llmOrder = () => ['claude'];
 function modelPicker(){ return offline() ? '<span class="faint">Offline: the planner needs the internet</span>' : ''; }

@@ -87,13 +87,13 @@ const inTopic = (m, topic) => topic==='All' || (m.topics||[]).includes(topic);
 /* C2: answers as reading text on a dark panel */
 function chatBlock(){
   const thread = CHATS[CHAT.topic] || [];
-  let h = '<section class="chat2" aria-label="Chat with your notes"><div class="c2head"><span class="chip2">'+esc(CHAT.topic==='All'?'All notes':CHAT.topic)+'</span><span class="muted2">Claude, names hidden · summaries and transcripts</span>'+(thread.length?'<button class="lnk2" data-chat="clear">Clear</button>':'')+'</div><div class="thread2" id="thread2">';
+  let h = '<section class="chat2" aria-label="Chat with your notes"><div class="c2head"><span class="chip2">'+esc(CHAT.topic==='All'?'All notes':CHAT.topic)+'</span><span class="muted2">'+brainModelName()+', names hidden · your classes first, then general knowledge and the web, each marked</span>'+deepBtn()+''+(thread.length?'<button class="lnk2" data-chat="clear">Clear</button>':'')+'</div><div class="thread2" id="thread2">';
   if(!thread.length) h += '<div class="empty2">Ask about '+(CHAT.topic==='All'?'anything in your meetings and plan':'“'+esc(CHAT.topic)+'”')+'. For example: what did we decide about the script structure?</div>';
   thread.forEach(m=>{
     if(m.role==='user') h += '<div class="q2">'+esc(m.text)+'</div>';
-    else h += '<div class="a2"><span class="chip2 small">'+(m.ms?'Answered in '+Math.max(1,Math.round(m.ms/1000))+' s':'Answer')+(m.cites&&m.cites.length?' · from '+m.cites.length+' meeting'+(m.cites.length===1?'':'s'):'')+'</span><div class="a2body">'+md(m.text)+'</div>'+(m.cites&&m.cites.length?'<div class="cites2">'+m.cites.map(c=>'<button class="lnk2" data-brain="open" data-id="'+esc(c.id)+'">'+esc(c.title)+'</button>').join('')+'</div>':'')+'</div>';
+    else h += '<div class="a2"><span class="chip2 small">'+(m.ms?'Answered in '+Math.max(1,Math.round(m.ms/1000))+' s':'Answer')+(m.cites&&m.cites.length?' · from '+m.cites.length+' meeting'+(m.cites.length===1?'':'s'):'')+'</span><div class="a2body">'+brAnswer(m, false)+'</div>'+(m.cites&&m.cites.length?'<div class="cites2">'+m.cites.map(c=>'<button class="lnk2" data-brain="open" data-id="'+esc(c.id)+'">'+esc(c.title)+'</button>').join('')+'</div>':'')+'</div>';
   });
-  if(CHAT.busy) h += '<span class="chip2 small">Thinking '+modelWhere()+'… <span class="lt"></span></span>';
+  if(CHAT.busy) h += CHAT.stream ? '<div class="a2"><div class="a2body" id="chat-stream">'+brAnswerHTML(CHAT.stream.replace(/\n?Notes used:.*$/s,''), false)+'</div></div>' : '<span class="chip2 small">Thinking with '+brainModelName()+'… <span class="lt"></span></span>';
   h += '</div><div class="c2input"><input id="chat-q" value="'+esc(CHAT.draft)+'" placeholder="Ask your notes" aria-label="Ask your notes"><button class="btn2" data-chat="go"'+(CHAT.busy?' disabled':'')+'>Send</button></div>';
   if(CHAT.error) h += '<div class="cerr2">'+esc(CHAT.error)+'</div>';
   return h + '</section>';
@@ -155,7 +155,7 @@ function brSpan(q, today){
 }
 function brChunks(m){
   const out = [], segs = m.segments||[], who = sp => sp==='you' ? 'You' : sp==='them' ? 'Meeting' : '';
-  const sum = m.summary ? m.summary+(m.decisions&&m.decisions.length?' Decisions: '+m.decisions.join('; '):'')+(m.actions&&m.actions.length?' Action items: '+m.actions.map(a=>a.text).join('; '):'')+(m.points&&m.points.length?' Key points: '+m.points.join('; '):'') : String(m.summaryMarkdown||'').slice(0,4000);
+  const sum = m.summary ? m.summary+(m.decisions&&m.decisions.length?' Decisions: '+m.decisions.join('; '):'')+(m.actions&&m.actions.length?' Action items: '+m.actions.map(a=>a.text).join('; '):'')+(m.points&&m.points.length?' Key points: '+m.points.join('; '):'')+((m.concepts||[]).length?' Concepts: '+m.concepts.map(c=>c.term+(c.explain?' = '+c.explain:'')).join('; '):'') : String(m.summaryMarkdown||'').slice(0,4000);
   if(sum) out.push({kind:'summary', text:sum});
   if(m.notes) out.push({kind:'notes', text:'His notes: '+m.notes});
   for(let i=0;i<segs.length;i+=12){ const g = segs.slice(i,i+12); out.push({kind:'transcript', t:g[0].t||0, text:g.map(s=>(who(s.sp)?who(s.sp)+': ':'')+s.text).join(' ')}); }
@@ -216,26 +216,32 @@ async function chatAsk(){
     }
     const hits = r.chunks.map(c=>({id:c.m.id, title:c.m.title||'Meeting', date:String(c.m.created||'').slice(0,10), kind:c.kind, at:c.t, text:c.text}));
     if(topic==='All'){ const words = brWords(q).map(brStem).map(brRe); allTasks().forEach(({c,t})=>{ const txt = c.short+': '+t.title+' (day '+t.due+', '+t.status+') '+(t.note||''); const s = words.filter(w=>{ w.lastIndex = 0; return w.test(txt); }).length; if(s >= 2 || (s && words.length===1)) hits.push({id:'', title:'Planner', date:t.due, kind:'plan', text:txt}); }); }
-    const top = hits.slice(0, 22);
+    const top = hits.slice(0, 36);   /* more of his classes than before (26 Nov 2026: Sonnet reads it well) */
     const history = thread.slice(-7,-1).map(m=>(m.role==='user'?'Student: ':'You: ')+m.text.slice(0,600)).join('\n');
     let answer = 'Nothing in '+(topic==='All'?'your notes':'this topic')+' mentions that.', cites = [];
     if(top.length){
       const lab = c => c.kind==='summary' ? 'summary' : c.kind==='transcript' ? 'transcript at '+clockLabel(c.at||0) : c.kind==='notes' ? 'the student\'s notes' : 'planner';
-      const o = extractJSON(await brainLLM(`You are the student's second brain and study partner. Answer from the notes below${topic==='All'?'':' from the topic "'+topic+'"'} first and say which meeting a fact comes from (and the transcript time when it helps). Transcript parts are speech-to-text: words can be misheard; "You:" is the student, "Meeting:" the others. If the question asks to explain a concept, you may add general knowledge, and say which part is not from the notes. If the notes do not answer it, say so plainly. Keep it short.
+      const sid = 'chat:'+Date.now(); let raw = '', red = {map:{}};
+      CHAT.stream = ''; render();
+      STREAM = {sid, on: piece => { raw += piece; CHAT.stream = restore(raw, red.map); const el = document.getElementById('chat-stream'); if(el){ el.innerHTML = brAnswerHTML(CHAT.stream.replace(/\n?Notes used:.*$/s,''), false); const th = document.getElementById('thread2'); if(th) th.scrollTop = th.scrollHeight; } }};
+      red = redact(`You are the student's second brain: notes from their classes and meetings, and the planner.${topic==='All'?'':' The question is about the topic "'+topic+'".'}
+${BR_RULES}
+- Refer to the notes by meeting title and date, not by their numbers. On the very last line write "Notes used:" and the numbers of the notes you used, like: Notes used: 2, 5
 ${history?'\nConversation so far:\n'+history+'\n':''}
 Question: ${q}
 
-Notes:
-${top.map((c,i)=>'['+(i+1)+'] '+c.title+' ('+c.date+', '+lab(c)+'): '+c.text.slice(0, c.kind==='summary' ? 2500 : 1400)).join('\n\n')}
-
-Return JSON: {"answer":"...","sources":[note numbers you used]}`));
-      answer = String(o.answer||'').replace(/\s*\[\d+(?:\s*[,–-]\s*\d+)*\]/g,'');
-      const used = (o.sources||[]).map(n=>top[n-1]).filter(Boolean); const seen = new Set();
+Notes from their sessions:
+${top.map((c,i)=>'['+(i+1)+'] '+c.title+' ('+c.date+', '+lab(c)+'): '+c.text.slice(0, c.kind==='summary' ? 4000 : 2000)).join('\n\n')}`);
+      const res = await brainAnswer(red, sid);
+      STREAM = null; CHAT.stream = null;
+      const nm = res.text.match(/\n?\s*Notes used:\s*([\d,\s]*)\s*$/i);
+      answer = (nm ? res.text.slice(0, nm.index) : res.text).trim();
+      const used = nm ? nm[1].split(/[,\s]+/).map(Number).map(n=>top[n-1]).filter(Boolean) : []; const seen = new Set();
       cites = (used.length?used:top).filter(c=>c.id && !seen.has(c.id) && seen.add(c.id)).slice(0,4).map(c=>({id:c.id, title:c.title}));
     }
-    thread.push({role:'assistant', text:answer, cites, ms:Date.now()-t0, at:new Date().toISOString()});
+    thread.push({role:'assistant', text:answer, cites, ms:Date.now()-t0, at:new Date().toISOString(), parts: top.length ? true : undefined, model: top.length ? brainModelName() : undefined});
     await saveChats();
-  }catch(e){ CHAT.error = 'Claude did not answer: '+e.message; thread.pop(); CHAT.draft = q; }
+  }catch(e){ STREAM = null; CHAT.stream = null; CHAT.error = 'Claude did not answer: '+e.message; thread.pop(); CHAT.draft = q; }
   CHAT.busy = false; render();
 }
 /* D6 + D1: topics as nested rectangles, meetings as points placed by date */
@@ -369,7 +375,7 @@ function meetingView(m){
   const menu = MV.menu ? '<div class="mx-menu" role="menu">'
     + '<label>Course <select id="m-course">'+courseOptions(m.course)+'</select></label>'
     + '<button data-brain="summarize"'+(m._busy?' disabled':'')+'>'+(m.summary||m.summaryMarkdown?'Summarize again':'Summarize')+'</button>'
-    + '<div class="mx-mrow faint">Summaries by Gemini 4 Hydrogen, names, links and numbers hidden</div>'
+    + '<div class="mx-mrow faint">Summaries by Claude Opus, names, links and numbers hidden</div>'
     + (m.audio?'<button data-brain="retranscribe">Transcribe again</button>':'')
     + '<button data-mv="notes">'+(MV.notes?'Hide your notes':'Your notes')+'</button>'
     + ((m.topics||[]).length?'<div class="mx-mrow">Topic '+m.topics.map(t=>'<button class="lnk" data-topic="'+esc(t)+'" data-brain="back">'+esc(t)+'</button>').join(', ')+'</div>':'')
@@ -387,16 +393,18 @@ function meetingView(m){
   if(m._moved) h += '<div class="cdone">'+esc(m._moved)+'</div>';
   if(m._note) h += '<div class="cdone">'+esc(m._note)+'</div>';
   if(m._proposal) h += '<section><h2>Planner changes from this meeting</h2>'+proposalBlock(m._proposal,'meeting')+'</section>';
-  /* left: summary, action items, key points (5, then + N more), notes */
+  /* left: summary, concepts, key points (5, then + N more), action items, notes */
   let L = '';
   if(m.summary){
     const acts = m.actions||[], found = acts.map(a=>actInPlan(m, a)), inPlan = found.filter(Boolean).length;
     L += '<span class="lbl">Summary</span><p>'+esc(m.summary)+'</p>';
+    const cons = m.concepts||[];
+    if(cons.length) L += '<h3>Concepts</h3><ul class="mx-cons">'+cons.map((c,i)=>'<li><i class="mono">'+(i+1)+'</i><span><b>'+esc(c.term)+'</b>'+(c.explain?' · '+esc(c.explain):'')+(c.at?' <span class="faint mono">'+esc(c.at)+'</span>':'')+'</span></li>').join('')+'</ul>';
+    const pts = m.points||[], shown = MV.more ? pts : pts.slice(0,5);
+    if(pts.length) L += '<h3>Key points'+(pts.length>5?'<button class="lnk mono" data-mv="more">'+(MV.more?'show fewer':'+ '+(pts.length-5)+' more')+'</button>':'')+'</h3><ul>'+shown.map((x,i)=>'<li><i class="mono">'+(i+1)+'</i><span>'+esc(x)+'</span></li>').join('')+'</ul>';
     if(acts.length) L += '<h3>Action items<span class="mono">'+inPlan+' in the plan</span></h3><ul>'+acts.map((a,i)=>{ const f = found[i];
       return '<li><i class="mono">'+(i+1)+'</i><span>'+esc(a.text)+(a.owner&&!/^me$/i.test(a.owner)?' <span class="faint">· '+esc(a.owner)+'</span>':'')+'</span>'
         + (f ? '<span class="ok mono">'+(f.t.status==='done'?'done':'in plan'+(f.t.due?' · '+esc(fmt(f.t.due,{weekday:'short',day:'numeric'})):''))+'</span>' : '<button class="mx-chip" data-mvadd="'+i+'">Add to plan</button>')+'</li>'; }).join('')+'</ul>';
-    const pts = m.points||[], shown = MV.more ? pts : pts.slice(0,5);
-    if(pts.length) L += '<h3>Key points'+(pts.length>5?'<button class="lnk mono" data-mv="more">'+(MV.more?'show fewer':'+ '+(pts.length-5)+' more')+'</button>':'')+'</h3><ul>'+shown.map((x,i)=>'<li><i class="mono">'+(i+1)+'</i><span>'+esc(x)+'</span></li>').join('')+'</ul>';
   } else if(m.summaryMarkdown) L += '<span class="lbl">Summary · from Meetily</span><div class="md">'+md(m.summaryMarkdown)+'</div>';
   else L += '<div class="empty">No summary yet. Open ⋯ and select Summarize.</div>';
   if(MV.notes) L += '<h3>Your notes</h3><textarea id="m-notes" rows="5" placeholder="Anything to remember">'+esc(m.notes||'')+'</textarea>';
@@ -426,15 +434,15 @@ document.addEventListener('click', e=>{
     compose = freshCompose(); compose.draft = a.text+(a.due?' (by '+a.due+')':'')+(BRAIN_OPEN.course?' · '+cnm(BRAIN_OPEN.course):''); chatOpen(true); render(); return; }
   if(MV.menu && !e.target.closest('.mx-menu,[data-mv]')){ MV.menu = false; render(); }
 });
-/* talk about one session: understand a concept, or organise the work it created. Claude (redacted) unless the model is Local or the Mac is offline. */
+/* talk about one session: understand a concept (brainAnswer: Sonnet or Opus, web allowed, parts by source), or organise the work it created (Haiku, planner JSON). */
 const ORG_RE = /\b(plan|planner|task|tasks|organi[sz]e|schedul|deadline|due|move|prepare|to-?do|this week|next week|tomorrow|busy|hours|when should|reschedul|add it|remind)/i;
 let STREAM = null;
 function sessionChat(m){
   const th = m.chat||[];
   const sug = ['What did we decide?','Quiz me on this session','What should I bring next time?'].concat(m.separated?['Where did I talk?']:[]);
-  let h = '<section class="mx-cv chat" aria-label="Talk about this session"><div class="hd"><b>Talk about this session</b><span class="mono">Claude</span>'+(th.length?'<button class="lnk" data-brain="askclear">'+(m._armChat?'Clear the chat for good?':'Clear')+'</button>':'')+'</div>';
-  h += '<div class="thread" id="m-thread">'+(th.length ? th.map(c=>c.role==='user' ? '<div class="mx-q">'+esc(c.text)+'</div>' : '<div class="mx-a">'+seekLinks(md(c.text))+'</div>').join('') : '<div class="empty">Ask anything about it: what a concept means here, or what to do before the next session.</div>')+'</div>';
-  if(m._asking) h += m._stream!=null ? '<div class="mx-a" id="m-stream">'+(m._stream?md(m._stream):'<span class="muted">Reading the session… <span class="lt mono"></span></span>')+'</div>' : '<div class="muted">Working out planner changes '+modelWhere()+'… <span class="lt mono"></span></div>';
+  let h = '<section class="mx-cv chat" aria-label="Talk about this session"><div class="hd"><b>Talk about this session</b><span class="mono">'+brainModelName()+'</span>'+deepBtn()+''+(th.length?'<button class="lnk" data-brain="askclear">'+(m._armChat?'Clear the chat for good?':'Clear')+'</button>':'')+'</div>';
+  h += '<div class="thread" id="m-thread">'+(th.length ? th.map(c=>c.role==='user' ? '<div class="mx-q">'+esc(c.text)+'</div>' : '<div class="mx-a">'+brAnswer(c, true)+'</div>').join('') : '<div class="empty">Ask anything about it: what a concept means here, or what to do before the next session.</div>')+'</div>';
+  if(m._asking) h += m._stream!=null ? '<div class="mx-a" id="m-stream">'+(m._stream?brAnswerHTML(m._stream, true):'<span class="muted">Reading the session… <span class="lt mono"></span></span>')+'</div>' : '<div class="muted">Working out planner changes '+modelWhere()+'… <span class="lt mono"></span></div>';
   if(!m._asking) h += '<div class="mx-sug">'+sug.map(q=>'<button data-mvsug="'+esc(q)+'">'+esc(q)+'</button>').join('')+'</div>';
   h += '<div class="mx-inp"><input id="m-ask" value="'+esc(m._ask||'')+'" placeholder="Ask about this session" aria-label="Ask about this session"><button class="btn pri" data-brain="ask"'+(m._asking?' disabled':'')+'>Send</button></div>';
   return h + '</section>';
@@ -455,32 +463,29 @@ async function sessionAsk(m){
   m.chat = m.chat||[]; m.chat.push({role:'user', text:q, at:new Date().toISOString()}); m._ask = ''; m._asking = true; m._error = ''; render();
   try{
     const c = cById(m.course);
-    const sum = m.summary ? m.summary+'\nDecisions: '+(m.decisions||[]).join('; ')+'\nAction items: '+(m.actions||[]).map(a=>a.text+(a.due?' (by '+a.due+')':'')).join('; ')+'\nKey points: '+(m.points||[]).join('; ') : String(m.summaryMarkdown||'').slice(0,4000);
+    const sum = m.summary ? m.summary+'\nDecisions: '+(m.decisions||[]).join('; ')+'\nAction items: '+(m.actions||[]).map(a=>a.text+(a.due?' (by '+a.due+')':'')).join('; ')+'\nKey points: '+(m.points||[]).join('; ')+((m.concepts||[]).length?'\nConcepts: '+m.concepts.map(c=>c.term+(c.explain?' = '+c.explain:'')).join('; '):'') : String(m.summaryMarkdown||'').slice(0,4000);
     const history = m.chat.slice(-9,-1).map(x=>(x.role==='user'?'Student: ':'You: ')+String(x.text).slice(0,700)).join('\n');
     const org = m._org || ORG_RE.test(q);
     if(!org){
       m._stream = ''; render(); localTimer(true);
       const sid = m.id+':'+Date.now(); let raw = '', red = null;
-      STREAM = {sid, on: piece => { raw += piece; m._stream = red ? restore(raw, red.map) : raw; const el = document.getElementById('m-stream'); if(el){ el.innerHTML = md(m._stream); const th = document.getElementById('m-thread'); if(th) th.scrollTop = th.scrollHeight; } }};
-      const prompt = `You are a study partner. The student asks about one of their sessions (a class or meeting).
-Session: ${m.title||'Untitled'} on ${String(m.created||'').slice(0,10)}${c?', course '+c.short:''}
+      STREAM = {sid, on: piece => { raw += piece; m._stream = red ? restore(raw, red.map) : raw; const el = document.getElementById('m-stream'); if(el){ el.innerHTML = brAnswerHTML(m._stream, true); const th = document.getElementById('m-thread'); if(th) th.scrollTop = th.scrollHeight; } }};
+      const prompt = `You are the student's study partner for one of their sessions (a class, seminar or meeting).
+${BR_RULES}
+
+Session: ${m.title||'Untitled'} on ${String(m.created||'').slice(0,10)}${c?', course '+c.short+' ('+c.name+')':''}
 Summary:
 ${sum||'none yet'}
 ${m.notes?'Student notes: '+m.notes:''}
 
 Transcript excerpts (time in the recording):
-${sessionContext(m, q+' '+history.slice(-300), 4500)||'no transcript'}
+${sessionContext(m, q+' '+history.slice(-300), 14000)||'no transcript'}
 ${history?'\nConversation so far:\n'+history+'\n':''}
-Question: ${q}
-
-Answer in the language of the question. Use what was said in the session first and give its time like [12:30]. If general knowledge helps explain a concept, add it and say it is not from the session. Clear and concrete, short paragraphs or a short list, Markdown.`;
-      let r = null;
+Question: ${q}`;
       red = redact(prompt);
-      r = await APP.call('llm', {prompt, remotePrompt: red.text, order:['claude'], sid});
-      if(!r.text) throw new Error((r.errors||[]).join(' · ') || 'Claude did not answer.');
-      r.text = restore(r.text, red.map);
+      const r = await brainAnswer(red, sid);
       STREAM = null; localTimer(false);
-      m.chat.push({role:'assistant', text:String(r.text||'').trim()||'No answer.', at:new Date().toISOString()});
+      m.chat.push({role:'assistant', text:String(r.text||'').trim()||'No answer.', at:new Date().toISOString(), parts:true, model:brainModelName()});
       m._stream = null; await saveMeeting(m);
       m._asking = false; render(); const th = document.getElementById('m-thread'); if(th) th.scrollTop = th.scrollHeight;
       return;
@@ -538,13 +543,57 @@ async function brainLLM(prompt, schema){
 }
 const haikuLLM = prompt => brainLLM(prompt);
 const PENDING = {};
-/* Summaries (26 Nov 2026, the user's request: "for summarizing texts use the best model possible"): Gemini 4 Hydrogen at
-   its highest effort through the Antigravity CLI (his Google AI plan), redacted like Claude. Claude Sonnet answers when
-   Gemini does not. Only when he asks (Summarize). */
+/* Summaries: Claude Opus, redacted (26 Nov 2026, his choice after Gemini's weekly allowance ran out in an afternoon). Only when he asks (Summarize). */
 async function summaryLLM(prompt){
-  const red = redact(prompt), r = await APP.call('llm', {prompt: red.text, remotePrompt: red.text, order:['gemini','claude'], model:'sonnet'});
-  if(!r.text) throw new Error((r.errors||[]).join(' · ') || (offline() ? 'The Mac is offline.' : 'Neither Gemini nor Claude answered.'));
+  const red = redact(prompt), r = await APP.call('llm', {prompt: red.text, remotePrompt: red.text, order:['claude'], model:'opus'});
+  if(!r.text) throw new Error((r.errors||[]).join(' · ') || (offline() ? 'The Mac is offline.' : 'Claude did not answer.'));
   return restore(r.text, red.map);
+}
+/* Brain answers (26 Nov 2026, his request: "Brain must be the smartest segment, capable of explaining everything with heavy
+   weight in the classes I had but also allowed to research or bring general knowledge but always explicitly").
+   Claude Sonnet, Opus with Think harder (localStorage brainDeep); web search allowed (`web`, only WebSearch and WebFetch).
+   The model writes up to three parts under fixed headings; code shows each part with its label (brParts), and text it
+   did not put under a heading is shown as "Source not marked", so nothing from outside his classes passes as his classes. */
+const BR_PARTS = {classes:'From your classes', general:'General knowledge', web:'From the web', mixed:'Source not marked'};
+const brainDeep = () => { try{ return localStorage.getItem('brainDeep')==='1'; }catch(e){ return false; } };
+const brainModelName = () => brainDeep() ? 'Claude Opus' : 'Claude Sonnet';
+const BR_RULES = `How to answer:
+- You are the student's smartest study help. Explain fully and clearly, like a very good tutor: what it means, why it matters, how it connects to other ideas, with examples. Go as deep as the question needs.
+- Their classes weigh most. Start from what was taught and discussed in their sessions: which session, the transcript time like [0:42:10], how the lecturer or the group put it, what the student said. Transcript parts are speech-to-text, so words can be misheard; "You" is the student, "Meeting" everyone else.
+- Then add general knowledge where it helps to explain, correct, give context or fill gaps.
+- Search the web (WebSearch, WebFetch) when the question needs facts you are not sure of, dates, quotes, recent things, or texts to read further. Search only with general words about the topic, never with the student's notes, names or placeholders.
+- Do any searching first, then write the whole answer in one go. Write Markdown in the language of the question. Start right away with the first heading, with nothing before it. Use up to three parts, each under exactly one of these headings, written in English, in this order, and leave out a part you do not need:
+### From your classes
+### General knowledge
+### From the web
+- Nothing that is not from the sessions or notes goes under "From your classes". If they say nothing about it, say so there in one sentence. Under "From the web" give each source as a Markdown link.
+- Placeholders like [Person 1] or [Link 2] stand for hidden names and links: keep them exactly as written.`;
+const BR_HEAD = /^\s*#{1,4}\s*\**\s*(From your classes|General knowledge|From the web)\s*\**\s*:?\s*$/i;
+function brParts(text){
+  const out = []; let cur = {k:'mixed', text:''};
+  for(const line of String(text||'').split('\n')){
+    const h = line.match(BR_HEAD);
+    if(h){ if(cur.text.trim()) out.push(cur); const w = h[1].toLowerCase(); cur = {k: w.includes('class') ? 'classes' : w.includes('general') ? 'general' : 'web', text:''}; continue; }
+    cur.text += line+'\n';
+  }
+  if(cur.text.trim()) out.push(cur);
+  return out;
+}
+function brAnswerHTML(text, seek){
+  return brParts(text).map(p=>{ const body = md(p.text.trim()), noSrc = p.k==='web' && !/https?:\/\//.test(p.text);
+    return '<div class="br-part br-'+p.k+'"><span class="br-lab mono">'+BR_PARTS[p.k]+(noSrc?' · no link given':'')+'</span>'+(seek?seekLinks(body):body)+'</div>'; }).join('');
+}
+/* an answer: new ones (parts) by source, older ones as they were */
+const brAnswer = (c, seek) => c.parts ? brAnswerHTML(c.text, seek) : (seek ? seekLinks(md(c.text)) : md(c.text));
+const deepBtn = () => '<button class="lnk mono'+(brainDeep()?' on':'')+'" data-brain="deep" title="Opus for the next questions: slower, deeper, uses more of your Claude limits">'+(brainDeep()?'Thinking harder (Opus)':'Think harder')+'</button>';
+/* `red`: the redacted prompt (redact(prompt)), made by the caller so streamed pieces can be restored as they come */
+async function brainAnswer(red, sid){
+  localTimer(true);
+  try{
+    const r = await APP.call('llm', {prompt: red.text, remotePrompt: red.text, order:['claude'], model: brainDeep() ? 'opus' : 'sonnet', web:true, sid});
+    if(!r.text) throw new Error((r.errors||[]).join(' · ') || (offline() ? 'The Mac is offline.' : 'Claude did not answer.'));
+    return {text: restore(r.text, red.map)};
+  } finally { localTimer(false); }
 }
 /* Transcripts are only ever English or Spanish; the summary is written in the transcript's language. Decided here by counting common words, not by the model. */
 const ES_WORDS = new Set('que de la el en y los las por para con una un es no lo se del al como pero más esto eso está están porque también muy todo hay tiene ser ya sí cuando entonces bueno vamos'.split(' '));
@@ -558,21 +607,25 @@ async function summarizeMeeting(m, opts){
   let ok = false;
   const full = (m.segments||[]).map(s=>'['+clockLabel(s.t)+']'+(s.sp?'['+spkName(s.sp)+'] ':' ')+s.text).join('\n');
   if(!full.trim()){ m._error = 'There is no transcript to summarize.'; render(); return; }
-  m._busy = 'Summarizing with Gemini… this can take a few minutes'; m._error = ''; m._note = ''; m._moved = ''; setLocalJob(m.id, m.title||'Meeting', 'summarizing', {pct:0}); render();
+  m._busy = 'Summarizing with Claude Opus… this can take a few minutes'; m._error = ''; m._note = ''; m._moved = ''; setLocalJob(m.id, m.title||'Meeting', 'summarizing', {pct:0}); render();
   try{
     const lang = transcriptLang(full.replace(/\[(?:You|Meeting)\]/g,''));
-    const o = extractJSON(await summaryLLM(`You summarize a meeting for a design and media student. The transcript is in ${lang==='es'?'Spanish':'English'}. Write the title, summary, decisions, actions and points in ${lang==='es'?'Spanish':'English'}. Keep the JSON keys in English.
+    /* Content first (26 Nov 2026, the user's report: summaries were "too focused on what do i need to do after but not about the theoretical content") */
+    const o = extractJSON(await summaryLLM(`You write study notes from a recorded session for a design and media student: usually a class, lecture, seminar, reading discussion or critique, sometimes an organisational meeting. The transcript is in ${lang==='es'?'Spanish':'English'}. Write every text in ${lang==='es'?'Spanish':'English'}. Keep the JSON keys in English.
+What matters most is the content: what was taught, argued and discussed. The theories and concepts, how they were defined and explained, the thinkers, texts, works and examples that came up, the questions raised and how the discussion went. Explain ideas so the student can study from these notes later, without the recording. Organisational things (deadlines, tasks) go only in "actions" and "decisions"; keep them out of the summary and the points unless the session was only about organisation.
 Courses the meeting may belong to (pick by what the work is, not by one shared word):
 ${courses.map(c=>'- '+c.id+' = '+c.short+' ('+c.name+')'+(c.note?': '+c.note:'')).join('\n')}
 Today is ${TODAY}. "actions" are things someone agreed to do; owner is "me" for the student. Lines marked [You] are the student and [Meeting] is everyone else on the call: use that to attribute decisions and actions.
 Return JSON only:
-{"title":"short title","course":"course id or empty","topic":"one of: ${topicNames().join(', ')||'none yet'}, or a new 2 to 4 word topic","summary":"4 to 6 plain sentences","decisions":["..."],"actions":[{"text":"what has to be done","owner":"me or a name","due":"YYYY-MM-DD or null"}],"points":["at most 8 key points"]}
+{"title":"short title","course":"course id or empty","topic":"one of: ${topicNames().join(', ')||'none yet'}, or a new 2 to 4 word topic","summary":"what the session was about and its main argument or line of thought, 6 to 10 sentences (2 to 4 for a purely organisational meeting)","concepts":[{"term":"a concept, theory, thinker, text or work","explain":"what it means and how it was used in the session, 1 to 3 sentences","at":"transcript time like 0:42:10, or empty"}],"points":["up to 12 points of content: arguments, claims, examples, questions raised, links between ideas; each starts with its transcript time like [0:42:10] when known"],"decisions":["..."],"actions":[{"text":"what has to be done","owner":"me or a name","due":"YYYY-MM-DD or null"}]}
+Give up to 12 concepts, the most important first; none for a purely organisational meeting. List ideas, not names: a thinker, text or work is a concept only when the session said something about it that the other entries do not; never list the same idea twice.
 
 Transcript:
 ${full}`));
     if(!m.title || /^Meeting \d|^m-\d/.test(m.title) || m.titleAuto) { m.title = String(o.title||m.title||''); delete m.titleAuto; }
     if(cById(o.course) && o.course!==m.course && !m.courseSet){ if(m.course) m._moved = 'Filed under '+cnm(o.course)+' (was '+cnm(m.course)+'). Change the course above if that is wrong.'; m.course = o.course; }
     m.summaryLang = lang; m.summary = String(o.summary||''); m.decisions = (o.decisions||[]).map(String); m.points = (o.points||[]).map(String);
+    m.concepts = (o.concepts||[]).filter(c=>c && c.term).map(c=>({term:String(c.term), explain:String(c.explain||''), at:String(c.at||'')})).slice(0,16);
     m.actions = (o.actions||[]).map(a=>typeof a==='string'?{text:a,owner:'',due:null}:{text:String(a.text||''), owner:String(a.owner||''), due:validDate(a.due)?a.due:null}).filter(a=>a.text);
     const tp = String(o.topic||'').trim(); if(tp && !/^none/i.test(tp)){ m.topics = Array.from(new Set((m.topics||[]).concat(tp))); let T = TOPICS.topics.find(x=>x.name===tp); if(!T){ T = {name:tp, description:'', ids:[]}; TOPICS.topics.push(T); } if(!T.ids.includes(m.id)) T.ids.push(m.id); saveTopics(); }
     m.status = 'summarized';
@@ -770,6 +823,7 @@ document.addEventListener('input', e=>{
       catch(e){ if(BRAIN_OPEN && BRAIN_OPEN.id===id){ BRAIN_OPEN._busy = ''; BRAIN_OPEN._error = e.message; } }
       return render();
     }
+    if(d.brain==='deep'){ try{ localStorage.setItem('brainDeep', brainDeep() ? '0' : '1'); }catch(e){} return render(); }
     if(d.brain==='plan') return planFromMeeting(BRAIN_OPEN);
     if(d.brain==='ask') return sessionAsk(BRAIN_OPEN);
     if(d.brain==='askclear'){ if(!BRAIN_OPEN._armChat){ BRAIN_OPEN._armChat = true; return render(); } BRAIN_OPEN.chat = []; BRAIN_OPEN._armChat = false; await saveMeeting(BRAIN_OPEN); return render(); }

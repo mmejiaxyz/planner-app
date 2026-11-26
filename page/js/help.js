@@ -14,7 +14,7 @@ function detectOnline(){ const t = REC.tools||{}, ev = callNow(); return t.callA
 let TOPICS = {topics:[]}, CHATS = {}, CHAT = {topic:'All', draft:'', busy:false, error:'', clustering:false};
 const freshCompose = () => ({draft:'', thread:[], busy:false, error:'', provider:'', questions:null, proposal:null, inboxId:null, done:''});
 let compose = freshCompose();
-const PROV = {claude:'Claude Haiku (Pro)', gemini:'Gemini 4 Hydrogen', amp:'Amp'};
+const PROV = {claude:'Claude Haiku (Pro)', amp:'Amp'};
 const cnm = id => (cById(id)||{}).short || id;
 /* a real calendar date: no rollover ("2026-11-31", "2027-02-30" are not dates; 19 Nov 2026 user test) */
 const validDate = s => { if(!/^\d{4}-\d{2}-\d{2}$/.test(s||'')) return false; const d = parse(s); return !isNaN(d) && iso(d)===s; };
@@ -129,6 +129,7 @@ function meetingMarkdown(m){
   const L = a => (a||[]).map(x=>'- '+(typeof x==='string'?x:(x.text||'')+(x.owner?' ('+x.owner+')':'')+(x.due?' by '+x.due:''))).join('\n');
   return '# '+(m.title||'Meeting')+'\nDate: '+String(m.created||'').slice(0,10)+'\n'
     + (m.summary?'\n## Summary\n'+m.summary+'\n':'') + ((m.points||[]).length?'\n## Points\n'+L(m.points)+'\n':'')
+    + ((m.concepts||[]).length?'\n## Concepts\n'+m.concepts.map(c=>'- '+c.term+(c.explain?': '+c.explain:'')+(c.at?' ('+c.at+')':'')).join('\n')+'\n':'')
     + ((m.decisions||[]).length?'\n## Decisions\n'+L(m.decisions)+'\n':'') + ((m.actions||[]).length?'\n## Actions\n'+L(m.actions)+'\n':'')
     + (m.notes?'\n## Notes\n'+m.notes+'\n':'') + ((m.segments||[]).length?'\n## Transcript\n'+m.segments.map(g=>'['+clockLabel(Math.round(g.t||0))+'] '+(g.sp?'['+spkName(g.sp)+'] ':'')+g.text).join('\n')+'\n':'');
 }

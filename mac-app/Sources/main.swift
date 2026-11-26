@@ -4,7 +4,7 @@
 //   calendar         events from Calendar.app (every account already set up on this Mac); read, add, change, delete
 //   inbox / inboxDone  the "Planner" list in Reminders (add items from the iPhone; they sync over iCloud), plus notes from the Planner iPhone app
 //   phoneOps / phoneOpsDone  changes made in the Planner iPhone app (PhoneSync.swift, SyncCore.swift, sync-worker/)
-//   llm              turn typed notes into tasks: Claude Haiku via the Claude Code CLI (Pro login); Gemini via the Antigravity CLI for summaries
+//   llm              turn typed notes into tasks: Claude Haiku via the Claude Code CLI (Pro login); Sonnet/Opus where asked, `web` for Brain answers
 //   prefs            which model to try first
 //   help*            task help sessions: a context folder per course, redacted copies in a sandbox, Claude reads only those
 // Build with build.sh. No Xcode needed.
@@ -348,19 +348,26 @@ final class Models {
 
     /// `model`: "haiku" (default), "sonnet" (planner notes that fit nothing in the plan, and its second look; 19 Nov 2026)
     /// or "opus" (setting up a course from its documents, 24 Nov 2026: rare, long documents, worth the better reading).
-    static func lean(_ model: String) -> [String] { model == "sonnet" || model == "opus" ? claudeLean.map { $0 == "haiku" ? model : $0 } : claudeLean }
+    /// `web` (26 Nov 2026, Brain answers: "allowed to research or bring general knowledge but always explicitly"): only
+    /// WebSearch and WebFetch, in dontAsk, so nothing else can run (tested: no file, shell or local read tool).
+    static func lean(_ model: String, web: Bool = false) -> [String] {
+        let base = model == "sonnet" || model == "opus" ? claudeLean.map { $0 == "haiku" ? model : $0 } : claudeLean
+        guard web, let i = base.firstIndex(of: "--tools") else { return base }
+        var a = base; a[i + 1] = "WebSearch,WebFetch"
+        return a + ["--permission-mode", "dontAsk", "--allowedTools", "WebSearch,WebFetch"]
+    }
 
-    func claude(_ prompt: String, model: String = "haiku") async throws -> String {
+    func claude(_ prompt: String, model: String = "haiku", web: Bool = false) async throws -> String {
         guard let exe = find("claude") else { throw NSError(domain: "llm", code: 10, userInfo: [NSLocalizedDescriptionKey: "Claude Code CLI not found"]) }
-        return try await run(exe, Models.lean(model) + ["--output-format", "text"], stdin: prompt, timeout: model == "opus" ? 300 : model == "sonnet" ? 180 : 120)
+        return try await run(exe, Models.lean(model, web: web) + ["--output-format", "text"], stdin: prompt, timeout: model == "opus" ? 600 : model == "sonnet" ? 240 : 120)
     }
 
     /// Same as `claude`, but streams: `chunk` gets each piece of text as Claude writes it.
-    func claudeStream(_ prompt: String, model: String = "haiku", chunk: @escaping @Sendable (String) -> Void) async throws -> String {
+    func claudeStream(_ prompt: String, model: String = "haiku", web: Bool = false, chunk: @escaping @Sendable (String) -> Void) async throws -> String {
         guard let exe = find("claude") else { throw NSError(domain: "llm", code: 10, userInfo: [NSLocalizedDescriptionKey: "Claude Code CLI not found"]) }
         final class Buf: @unchecked Sendable { var pending = ""; var text = ""; var result: String?; let lock = NSLock() }
         let b = Buf()
-        _ = try await run(exe, Models.lean(model) + ["--output-format", "stream-json", "--verbose", "--include-partial-messages"], stdin: prompt, timeout: model == "opus" ? 300 : model == "sonnet" ? 180 : 120, onText: { piece in
+        _ = try await run(exe, Models.lean(model, web: web) + ["--output-format", "stream-json", "--verbose", "--include-partial-messages"], stdin: prompt, timeout: model == "opus" ? 600 : model == "sonnet" ? 240 : 120, onText: { piece in
             b.lock.lock(); b.pending += piece
             var lines = b.pending.components(separatedBy: "\n"); b.pending = lines.removeLast()
             var out: [String] = []
@@ -368,12 +375,17 @@ final class Models {
                 guard let d = l.data(using: .utf8), let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { continue }
                 if o["type"] as? String == "stream_event", let ev = o["event"] as? [String: Any], ev["type"] as? String == "content_block_delta",
                    let delta = ev["delta"] as? [String: Any], let t = delta["text"] as? String { b.text += t; out.append(t) }
+                // a new text block after a web search: keep it apart from the text before
+                if web, o["type"] as? String == "stream_event", let ev = o["event"] as? [String: Any], ev["type"] as? String == "content_block_start",
+                   (ev["content_block"] as? [String: Any])?["type"] as? String == "text", !b.text.isEmpty, !b.text.hasSuffix("\n\n") { b.text += "\n\n"; out.append("\n\n") }
                 if o["type"] as? String == "result", let r = o["result"] as? String { b.result = r }
             }
             b.lock.unlock()
             out.forEach(chunk)
         })
         b.lock.lock(); defer { b.lock.unlock() }
+        // with web search the answer can come in several messages and `result` holds only the last one: keep all of it (what was streamed)
+        if web, !b.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return b.text }
         return b.result ?? b.text
     }
 
@@ -427,51 +439,16 @@ final class Models {
         return try await run(exe, ["-x"], stdin: prompt, timeout: 180)
     }
 
-    /// Gemini through the Antigravity CLI (`agy`, his Google AI plan; 26 Nov 2026: summaries, "the best model possible").
-    /// Text in, text out, nothing else: in print mode agy's default agent runs shell commands, writes files and fetches
-    /// pages without asking (tested 26 Nov 2026), so it runs as a custom agent with no tools and no default prompt
-    /// (`excludeDefaultComponents`, 421 input tokens instead of 15,000: the tools are not sent), with deny rules for
-    /// commands, files and the network on top, in an empty folder of its own.
-    static let geminiAgent = """
-    ---
-    name: textonly
-    description: Answers from the text in the prompt only. No tools.
-    excludeDefaultComponents: true
-    tools: []
-    ---
-    You answer only from the text in the prompt. You have no tools: never try to read, write, run or fetch anything.
-    Placeholders like [Person 1] or [Link 2] stand for hidden names and links: keep them exactly as written.
-    """
-    static let geminiDeny = #"{"permissions":{"deny":["command(*)","unsandboxed(*)","read_file(*)","write_file(*)","edit(*)","file(*)","domain(*)","network(*)","fetch(*)","browser(*)","mcp(*)"]}}"#
-    func gemini(_ prompt: String, model: String) async throws -> String {
-        guard let exe = find("agy") else { throw NSError(domain: "llm", code: 16, userInfo: [NSLocalizedDescriptionKey: "Antigravity CLI (agy) not found"]) }
-        let dir = Paths.support.appendingPathComponent("gemini", isDirectory: true)
-        let agents = dir.appendingPathComponent(".agents/agents", isDirectory: true)
-        try FileManager.default.createDirectory(at: agents, withIntermediateDirectories: true)
-        try Models.geminiAgent.write(to: agents.appendingPathComponent("textonly.md"), atomically: true, encoding: .utf8)
-        // agy takes the prompt as an argument (its stream-json input wants its own event format); macOS allows about 1 MB of arguments.
-        guard prompt.utf8.count < 700_000 else { throw NSError(domain: "llm", code: 17, userInfo: [NSLocalizedDescriptionKey: "Too long for Gemini"]) }
-        let out = try await run(exe, ["--agent", "textonly", "--model", model, "--settings", Models.geminiDeny, "--output-format", "json", "--print-timeout", "900s", "-p", prompt],
-                                stdin: "", timeout: 960, cwd: dir)
-        guard let line = out.split(separator: "\n").last(where: { $0.hasPrefix("{") }), let d = line.data(using: .utf8),
-              let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else {
-            throw NSError(domain: "llm", code: 18, userInfo: [NSLocalizedDescriptionKey: String(out.trimmingCharacters(in: .whitespacesAndNewlines).suffix(300))])
-        }
-        if o["status"] as? String != "SUCCESS" { throw NSError(domain: "llm", code: 19, userInfo: [NSLocalizedDescriptionKey: (o["error"] as? String) ?? "Gemini did not answer"]) }
-        return o["response"] as? String ?? ""
-    }
-
     /// Try providers in order; return the first answer.
     /// `remote` is the redacted prompt (names, links, emails, numbers replaced); every provider gets only that.
-    func ask(remote: String, order: [String], geminiModel: String, claudeModel: String = "haiku", chunk: (@Sendable (String) -> Void)? = nil) async -> [String: Any] {
+    func ask(remote: String, order: [String], claudeModel: String = "haiku", web: Bool = false, chunk: (@Sendable (String) -> Void)? = nil) async -> [String: Any] {
         var errors: [String] = []
         for prov in order {
             do {
                 let text: String
                 switch prov {
-                case "claude": text = chunk != nil ? try await claudeStream(remote, model: claudeModel, chunk: chunk!) : try await claude(remote, model: claudeModel)
+                case "claude": text = chunk != nil ? try await claudeStream(remote, model: claudeModel, web: web, chunk: chunk!) : try await claude(remote, model: claudeModel, web: web)
                 case "amp": text = try await amp(remote)
-                case "gemini": text = try await gemini(remote, model: geminiModel)
                 default: continue
                 }
                 if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { errors.append("\(prov): empty answer"); continue }
@@ -2119,7 +2096,6 @@ final class Bridge: NSObject, WKScriptMessageHandler {
     let defaults = UserDefaults.standard
 
     var order: [String] { let o = (defaults.stringArray(forKey: "modelOrder") ?? []).filter { $0 != "ollama" }; return o.isEmpty ? ["claude"] : o }   // Ollama removed 26 Nov 2026
-    var geminiModel: String { defaults.string(forKey: "geminiModel") ?? "gemini-4-hydrogen-xhigh" }
 
     func userContentController(_ uc: WKUserContentController, didReceive message: WKScriptMessage) {
         guard let body = message.body as? [String: Any], let id = body["id"] as? Int, let op = body["op"] as? String else { return }
@@ -2173,16 +2149,14 @@ final class Bridge: NSObject, WKScriptMessageHandler {
                 }
             }
             let cm = ["sonnet", "opus"].contains(a["model"] as? String ?? "") ? (a["model"] as! String) : "haiku"
-            var res = await models.ask(remote: a["remotePrompt"] as? String ?? a["prompt"] as? String ?? "", order: ord.filter { $0 != "ollama" }, geminiModel: geminiModel, claudeModel: cm, chunk: onChunk)
+            var res = await models.ask(remote: a["remotePrompt"] as? String ?? a["prompt"] as? String ?? "", order: ord.filter { $0 != "ollama" && $0 != "gemini" }, claudeModel: cm, web: a["web"] as? Bool ?? false, chunk: onChunk)
             if res["provider"] as? String == "claude" { res["model"] = cm }
-            if res["provider"] as? String == "gemini" { res["model"] = geminiModel }
             return res
         case "prefs":
             if let o = a["order"] as? [String] { defaults.set(o, forKey: "modelOrder") }
-            if let m = a["geminiModel"] as? String { defaults.set(m, forKey: "geminiModel") }
             if let w = a["privateWords"] as? String { defaults.set(w, forKey: "privateWords") }
-            return ["order": order, "geminiModel": geminiModel, "dataFile": Paths.plan.path, "privateWords": defaults.string(forKey: "privateWords") ?? "",
-                    "available": ["claude": models.find("claude") != nil, "amp": models.find("amp") != nil, "gemini": models.find("agy") != nil]]
+            return ["order": order, "dataFile": Paths.plan.path, "privateWords": defaults.string(forKey: "privateWords") ?? "",
+                    "available": ["claude": models.find("claude") != nil, "amp": models.find("amp") != nil]]
         case "updateCheck": return await Updater.check()
         case "updateApply":
             let r = await Updater.apply()
