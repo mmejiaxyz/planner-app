@@ -6,6 +6,9 @@
 //   ops/<name> one change made on the phone, written by the phone, read and deleted by the Mac
 //   audio/<id>/<n>  a recording from the phone in parts, read by the Mac, deleted once it is in Brain
 //                   (since 21 Nov 2026 also PDFs from the Mac for the phone's reader, sealed as kind "file", deleted by the phone)
+//   text/<id>/<n>   the reading versions (Docling text) of the course PDFs, from the Mac, kept (since 26 Nov 2026, the
+//                   user's request: the phone's library stays on Cloudflare, so it can fetch any text with the Mac off);
+//                   the Mac replaces one when its text or marks change and deletes it when the PDF is gone. 1 GB in all.
 //   web        the page the phone shows (encrypted like the rest), written by the Mac only when a rebuild changed it
 //   backup     the Mac's off-device copy of the data (plan, Brain notes, the data folder's text files), at most 200 MB,
 //              uploaded in chunks of 4 MB (a request body is at most 100 MB on the free plan, and the object has about
@@ -17,6 +20,7 @@
 //   - at most DAILY_CAP authorised requests a day (UTC); after that every call gets 429 until midnight UTC
 //   - wrong or missing token: rejected in the Worker, the storage object is never touched
 //   - recordings: parts of at most 96 KB, 200 MB waiting in all (free Durable Object storage: 5 GB)
+//   - kept reading versions: parts of at most 96 KB, 1 GB in all
 //   - snapshot and page at most 1 MB each, a change at most 96 KB, at most 300 changes waiting, 32 MB stored in all
 //   - the apps poll slowly on top of this (phone 60 s while open, Mac 30 s while open) and upload only on change
 
@@ -33,6 +37,8 @@ const OP_NAME = /^\d{13}-[a-f0-9]{8}\.bin$/;
 const AUDIO_ID = /^\d{13}-[a-f0-9]{8}$/;
 const MAX_AUDIO = 200 << 20;      // recordings waiting for the Mac, all together (deleted once the Mac has them)
 const MAX_AUDIO_PARTS = 4000;     // one recording: 4000 parts of up to 96 KB, about 25 hours of speech
+const MAX_TEXT = 1 << 30;         // kept reading versions, all together (about 6 MB in Nov 2026); guards the 5 GB store
+                                  // against a runaway upload, so the snapshot, changes and recordings keep their room
 
 const enc = new TextEncoder();
 async function sha256hex(s) {
@@ -163,6 +169,36 @@ export class Box {
     return text("not found", 404);
   }
 
+  // Pieces of one file under prefix p ("au:" or "tx:"): <p><id>:<nnnn>, the bytes of each file in <p>b:<id> and of all
+  // in <b>Bytes. PUT and GET one piece; DELETE ?parts=N deletes by number, never loading the pieces.
+  async parts(p, b, cap, id, n, m, url, request) {
+    const k = n === null ? null : p + id + ":" + String(n).padStart(4, "0"), total = b + "Bytes", mineK = p + "b:" + id;
+    if (k && m === "PUT") {
+      if (n >= MAX_AUDIO_PARTS) return text("too many parts", 413);
+      const body = await request.arrayBuffer();
+      if (body.byteLength < 32 || body.byteLength > MAX_OP) return text("bad size", 413);
+      const used = (await this.s.get(total)) || 0, mine = (await this.s.get(mineK)) || 0, old = await this.s.get(k);
+      const grow = body.byteLength - (old ? old.byteLength : 0);
+      if (used + grow > cap) return text("storage full", 507);
+      await this.s.put({ [k]: body, [total]: used + grow, [mineK]: mine + grow });
+      return json({ ok: true });
+    }
+    if (k && m === "GET") {
+      const v = await this.s.get(k);
+      return v ? new Response(v, { headers: { "content-type": "application/octet-stream", "cache-control": "no-store" } }) : text("none", 404);
+    }
+    if (n === null && m === "DELETE") {
+      const count = Math.min(MAX_AUDIO_PARTS, Number(url.searchParams.get("parts")) || 0);
+      const keys = [...Array(count).keys()].map((i) => p + id + ":" + String(i).padStart(4, "0"));
+      for (let i = 0; i < keys.length; i += 128) await this.s.delete(keys.slice(i, i + 128));
+      const freed = (await this.s.get(mineK)) || 0;
+      await this.s.delete(mineK);
+      await this.s.put(total, Math.max(0, ((await this.s.get(total)) || 0) - freed));
+      return json({ deleted: keys.length, freed });
+    }
+    return text("not found", 404);
+  }
+
   async fetch(request) {
     const c = await this.count();
     if (c.n > DAILY_CAP) return text("daily limit reached", 429);
@@ -170,7 +206,7 @@ export class Box {
 
     if (path === "/status" && m === "GET") {
       const t = await this.total();
-      return json({ snapshot: (await this.s.get("snapTag")) || null, snapshotAt: (await this.s.get("snapAt")) || null, web: (await this.s.get("webTag")) || null, audioBytes: (await this.s.get("audioBytes")) || 0, backup: (await this.s.get("bakMan")) || null, ops: t.ops, bytes: t.bytes, today: c.n, cap: DAILY_CAP });
+      return json({ snapshot: (await this.s.get("snapTag")) || null, snapshotAt: (await this.s.get("snapAt")) || null, web: (await this.s.get("webTag")) || null, audioBytes: (await this.s.get("audioBytes")) || 0, textBytes: (await this.s.get("textBytes")) || 0, backup: (await this.s.get("bakMan")) || null, ops: t.ops, bytes: t.bytes, today: c.n, cap: DAILY_CAP });
     }
 
     // snapshot: the plan, from the Mac. web: the page (index.html and js/), from the Mac, uploaded only after a rebuild.
@@ -178,7 +214,7 @@ export class Box {
     if (path === "/snapshot" && m === "PUT") return this.putBlob("snap", request);
     if (path === "/web" && m === "GET") return this.getBlob("web", request);
     if (path === "/web" && m === "PUT") return this.putBlob("web", request);
-    // every transfer piece (PDF, text version and recording parts, au:/aub:) goes; the devices ask again for what they need.
+    // every transfer piece (PDF and recording parts, au:/aub:) goes; the kept reading versions (tx:) stay; the devices ask again for what they need.
     // The snapshot, phone changes and the backup stay. The Mac calls it; ?confirm=all guards against a stray request.
     if (path === "/parts/clear" && m === "POST") {
       if (url.searchParams.get("confirm") !== "all") return text("add ?confirm=all", 400);
@@ -208,34 +244,11 @@ export class Box {
       return json({ deleted: keys.length });
     }
 
-    // recordings: the phone puts parts, the Mac gets them one by one and deletes the recording when it is in Brain
-    const am = path.match(/^\/audio\/([^/]+)(?:\/(\d{1,4}))?$/);
-    if (am && AUDIO_ID.test(am[1])) {
-      const id = am[1], n = am[2] === undefined ? null : Number(am[2]);
-      const k = n === null ? null : "au:" + id + ":" + String(n).padStart(4, "0");
-      if (k && m === "PUT") {
-        if (n >= MAX_AUDIO_PARTS) return text("recording too long", 413);
-        const body = await request.arrayBuffer();
-        if (body.byteLength < 32 || body.byteLength > MAX_OP) return text("bad size", 413);
-        const used = (await this.s.get("audioBytes")) || 0, mine = (await this.s.get("aub:" + id)) || 0, old = await this.s.get(k);
-        const grow = body.byteLength - (old ? old.byteLength : 0);
-        if (used + grow > MAX_AUDIO) return text("storage full", 507);
-        await this.s.put({ [k]: body, audioBytes: used + grow, ["aub:" + id]: mine + grow });
-        return json({ ok: true });
-      }
-      if (k && m === "GET") {
-        const v = await this.s.get(k);
-        return v ? new Response(v, { headers: { "content-type": "application/octet-stream", "cache-control": "no-store" } }) : text("none", 404);
-      }
-      if (n === null && m === "DELETE") {          // ?parts=N: delete by number, never loading the parts
-        const count = Math.min(MAX_AUDIO_PARTS, Number(url.searchParams.get("parts")) || 0);
-        const keys = [...Array(count).keys()].map((i) => "au:" + id + ":" + String(i).padStart(4, "0"));
-        for (let i = 0; i < keys.length; i += 128) await this.s.delete(keys.slice(i, i + 128));
-        const freed = (await this.s.get("aub:" + id)) || 0;
-        await this.s.delete("aub:" + id);
-        await this.s.put("audioBytes", Math.max(0, ((await this.s.get("audioBytes")) || 0) - freed));
-        return json({ deleted: keys.length, freed });
-      }
+    // recordings (and PDFs) in transit: au:, deleted once fetched. Reading versions: tx:, kept.
+    const am = path.match(/^\/(audio|text)\/([^/]+)(?:\/(\d{1,4}))?$/);
+    if (am && AUDIO_ID.test(am[2])) {
+      const [p, b, cap] = am[1] === "audio" ? ["au:", "audio", MAX_AUDIO] : ["tx:", "text", MAX_TEXT];
+      return this.parts(p, b, cap, am[2], am[3] === undefined ? null : Number(am[3]), m, url, request);
     }
 
     const om = path.match(/^\/ops\/(.+)$/);

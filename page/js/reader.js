@@ -53,6 +53,9 @@ async function openReader(path, ctx={}){
        phone, only text version"). A PDF copy from before stays readable here; nothing newer is fetched. */
     if(x && x.reading) return rdOpenText();
     if(!x || !x.cached){ rdFetch(); return; }
+    /* an old PDF copy without its text (26 Nov 2026, the user's report: "the iphone also has a pdf and has not
+       downloaded the text"): it opens, the text is asked for and replaces it when it arrives (readerReading) */
+    APP.call('fileGet', {cid:ph.cid, file:ph.file}).catch(()=>{});
   }
   await rdOpenDoc();
 }

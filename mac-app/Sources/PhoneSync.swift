@@ -22,7 +22,9 @@
 // - Text first (25 Nov 2026, the user's rule: "the post processed text is the one always sent to the iphone, only when missing
 //   is the pdf sent"): every PDF linked to the app (course folders, linked folders) gets a reading version (Reading.swift)
 //   and that goes to the phone, with the PDF's marks in it (mirrorReading). mirror() sends a PDF itself only when its
-//   reading version cannot be made (no Docling, or it failed); while one is being made it waits. A "fileReq" (the phone
+//   reading version cannot be made (no Docling, or it failed); while one is being made it waits. Since 26 Nov 2026 the
+//   reading versions stay on the Worker as the phone's library (snapshot "texts"), so the phone gets any of them with the
+//   Mac off, after a reinstall or on a new phone. A "fileReq" (the phone
 //   opening the original page, or a PDF with no text yet) still sends the PDF.
 // - Nothing is sent before pairing (Planner › Pair iPhone…) and without sync-server.json (sync-worker/setup.sh).
 //
@@ -59,9 +61,11 @@ final class PhoneSync {
     private var names: [String] = []
     private var onPhone: [String: Int] = [:]            // "cid/file" -> file date of the copy the phone has
     // Reading versions for the phone's book reader (reader redesign, 25 Nov 2026): the Mac's Docling text (Reading.swift),
-    // zlib-compressed and sent in parts like the PDFs, named in the snapshot's "readSends"; the phone says "readGot".
-    private var readSends: [[String: Any]] = []         // {id, cid, file, parts, sha256 (of the JSON), size, at}
-    private var readSent: [String: String] = [:]        // "cid/file" -> stamp (reading version date @ PDF date) last uploaded
+    // zlib-compressed and sealed in parts. Since 26 Nov 2026 they are kept on the Worker (text/, 1 GB cap), the phone's
+    // library: the snapshot's "texts" lists every one, and the phone fetches what it lacks, with the Mac off too. One is
+    // replaced when its text or the PDF's marks change, and deleted when the PDF leaves the course folders.
+    private var texts: [String: [String: Any]] = [:]    // "cid/file" -> {id, parts, size, sha256 (of the JSON), stamp (reading version date @ PDF date)}
+    private var readSends: [[String: Any]] = []         // the transit sends before the library: their parts are deleted once
     private var mirroring = false
     /// Never a PDF to the phone (27 Nov 2026, the user's rule: "I dont want to ever send the pdf to the phone, only text
     /// version"): a phone request (fileReq) makes that file's reading version first and sends it as soon as it is ready.
@@ -89,7 +93,7 @@ final class PhoneSync {
             names = o["names"] as? [String] ?? []
             onPhone = o["onPhone"] as? [String: Int] ?? [:]
             readSends = o["readSends"] as? [[String: Any]] ?? []
-            readSent = o["readSent"] as? [String: String] ?? [:]
+            texts = o["texts"] as? [String: [String: Any]] ?? [:]
         }
         // PDFs uploaded for the phone before the text-only rule are withdrawn: the phone no longer sees them in the snapshot
         // and their parts on the Worker are deleted (dropPDFs, on the first mirror)
@@ -104,7 +108,7 @@ final class PhoneSync {
 
     private func saveState() {
         applied = Array(applied.suffix(300))
-        if let d = try? JSONSerialization.data(withJSONObject: ["applied": applied, "notes": notes, "webTag": webTag, "fileSends": fileSends, "marked": marked, "helps": helps, "names": names, "onPhone": onPhone, "readSends": readSends, "readSent": readSent]) { try? d.write(to: stateURL, options: .atomic) }
+        if let d = try? JSONSerialization.data(withJSONObject: ["applied": applied, "notes": notes, "webTag": webTag, "fileSends": fileSends, "marked": marked, "helps": helps, "names": names, "onPhone": onPhone, "readSends": readSends, "texts": texts]) { try? d.write(to: stateURL, options: .atomic) }
     }
 
     // MARK: key (Mac)
@@ -218,7 +222,7 @@ final class PhoneSync {
         var plan = store.snapshot(); plan["textless"] = textless()   // files with no text version: the phone says so instead of waiting
         var body: [String: Any] = ["plan": plan, "events": events, "applied": Array(applied.suffix(300)),
                                    "files": coursePDFs(), "fileSends": fileSends.map { $0.filter { $0.key != "at" } }, "marked": marked, "names": names,
-                                   "readSends": readSends.map { $0.filter { $0.key != "at" } }]
+                                   "texts": textList()]
         if let web = await webForSnapshot(key: key, server: server) { body["web"] = web }
         guard let plain = try? JSONSerialization.data(withJSONObject: body, options: [.sortedKeys]) else { return }
         let hash = SHA256.hash(data: plain).map { String(format: "%02x", $0) }.joined()
@@ -258,7 +262,7 @@ final class PhoneSync {
     /// The phone asked for a file: its reading version goes first in line and is sent the moment it is made.
     func wantText(cid: String, file: String) {
         let k = cid + "/" + file
-        readSent[k] = nil                                      // asked again: the phone does not have it, send it again
+        if texts[k] != nil { recheck.insert(k) }               // asked again: its pieces may be gone, upload it again
         if !wanted.contains(k) { wanted.insert(k, at: 0) }
         if let u = pdfURL(cid: cid, file: file) { _ = Reading.shared.get(u.path) }
         Task { @MainActor [weak self] in await self?.mirror() }
@@ -269,54 +273,69 @@ final class PhoneSync {
         Task { @MainActor [weak self] in await self?.mirror() }
     }
 
-    /// Reading versions the phone does not have yet: small (a 100-page scan is about 50 KB compressed), so they go
-    /// before PDFs; at most 40 a pass and 8 MB, within the same Worker store as the PDFs. Each carries the PDF's marks
-    /// ("marks": highlights, underlines and notes in the reading version's page space, Reader.marks), so the phone shows
-    /// them without the PDF; a PDF whose marks change (a new date) is sent again.
+    /// The library in the snapshot: one line per kept reading version.
+    private func textList() -> [[String: Any]] {
+        texts.keys.sorted().compactMap { k in
+            guard let t = texts[k], let i = k.firstIndex(of: "/") else { return nil }
+            return ["cid": String(k[..<i]), "file": String(k[k.index(after: i)...]), "id": t["id"] ?? "", "parts": t["parts"] ?? 0, "size": t["size"] ?? 0, "sha256": t["sha256"] ?? ""]
+        }
+    }
+    private var recheck = Set<String>()                 // "cid/file" the phone asked for although the library has it
+
+    /// Keeps the Worker's library in step with the reading versions here: uploads every one that is new or changed (its
+    /// text, or the PDF's marks: a new date), the ones the phone asked for first, and deletes the ones whose PDF left the
+    /// course folders. Each carries the PDF's marks ("marks": highlights, underlines and notes in the reading version's
+    /// page space, Reader.marks), so the phone shows them without the PDF. About 6 MB for 53 books (Nov 2026).
     private func mirrorReading() async {
         guard let key, let server else { return }
-        var sent = 0, bytes = 0
-        // every course PDF with a reading version; the ones the phone asked for first
+        if !readSends.isEmpty {                                // the transit copies of before: their parts go
+            for o in readSends { if let p = o["parts"] as? Int, let id = o["id"] as? String { try? await server.deleteFile(id, parts: p) } }
+            readSends = []; saveState()
+        }
+        var changed = false
         var all: [(cid: String, dir: URL, f: String)] = []
         for c in store.courses {
             guard let cid = c["id"] as? String, let dir = courseFolder(cid) else { continue }
             for e in Self.pdfList(dir) { all.append((cid, dir, e["f"] as? String ?? "")) }
         }
         all.sort { wanted.contains($0.cid + "/" + $0.f) && !wanted.contains($1.cid + "/" + $1.f) }
-        do {
-            for (cid, dir, f) in all {
-                if sent >= 40 || bytes > 8 << 20 { break }
-                let k = cid + "/" + f, path = dir.appendingPathComponent(f).path
-                if Reading.shared.state(path) == "failed" { wanted.removeAll { $0 == k } }   // no text can be made: the phone says so
-                guard Reading.shared.ready(path) else { continue }
-                wanted.removeAll { $0 == k }
-                bridgeFlush?(dir.appendingPathComponent(f))                 // marks still waiting to be written go in first
-                let stamp = String(Self.mtime(Reading.shared.json(path))) + "@" + String(Self.mtime(dir.appendingPathComponent(f)))
-                if readSent[k] == stamp { continue }
-                guard let raw = try? Data(contentsOf: Reading.shared.json(path)), var obj = try? JSONSerialization.jsonObject(with: raw) as? [String: Any] else { continue }
-                let sizes = (obj["sizes"] as? [[Any]] ?? []).map { $0.compactMap { ($0 as? NSNumber)?.doubleValue } }
-                obj["marks"] = PDFDocument(url: dir.appendingPathComponent(f)).map { Reader.marks(in: $0, sizes: sizes, notes: true) } ?? []
-                guard let json = try? JSONSerialization.data(withJSONObject: obj) else { continue }
-                let sha = SHA256.hash(data: json).map { String(format: "%02x", $0) }.joined()
-                guard let packed = try? (json as NSData).compressed(using: .zlib) as Data else { continue }
-                let rid = String(SyncCore.newOpName().dropLast(4))
-                let parts = max(1, (packed.count + SyncCore.filePart - 1) / SyncCore.filePart)
-                do {
-                    for n in 0..<parts {
-                        let chunk = packed.subdata(in: (n * SyncCore.filePart)..<min(packed.count, (n + 1) * SyncCore.filePart))
-                        try await server.putFilePart(rid, n, try SyncCore.sealData(chunk, kind: .file, context: "\(rid):\(n)", key: key))
-                    }
-                } catch { lastError = "Reading version for the iPhone: " + error.localizedDescription; return }
-                for old in readSends where (old["cid"] as? String) == cid && (old["file"] as? String) == f {
-                    if let p = old["parts"] as? Int, let oid = old["id"] as? String { try? await server.deleteFile(oid, parts: p) }
+        for (cid, dir, f) in all {
+            let k = cid + "/" + f, path = dir.appendingPathComponent(f).path
+            if Reading.shared.state(path) == "failed" { wanted.removeAll { $0 == k } }   // no text can be made: the phone says so
+            guard Reading.shared.ready(path) else { continue }
+            wanted.removeAll { $0 == k }
+            bridgeFlush?(dir.appendingPathComponent(f))                 // marks still waiting to be written go in first
+            let stamp = String(Self.mtime(Reading.shared.json(path))) + "@" + String(Self.mtime(dir.appendingPathComponent(f)))
+            if (texts[k]?["stamp"] as? String) == stamp && !recheck.contains(k) { continue }
+            guard let raw = try? Data(contentsOf: Reading.shared.json(path)), var obj = try? JSONSerialization.jsonObject(with: raw) as? [String: Any] else { continue }
+            let sizes = (obj["sizes"] as? [[Any]] ?? []).map { $0.compactMap { ($0 as? NSNumber)?.doubleValue } }
+            obj["marks"] = PDFDocument(url: dir.appendingPathComponent(f)).map { Reader.marks(in: $0, sizes: sizes, notes: true) } ?? []
+            guard let json = try? JSONSerialization.data(withJSONObject: obj) else { continue }
+            let sha = SHA256.hash(data: json).map { String(format: "%02x", $0) }.joined()
+            guard let packed = try? (json as NSData).compressed(using: .zlib) as Data else { continue }
+            let rid = String(SyncCore.newOpName().dropLast(4))
+            let parts = max(1, (packed.count + SyncCore.filePart - 1) / SyncCore.filePart)
+            do {
+                for n in 0..<parts {
+                    let chunk = packed.subdata(in: (n * SyncCore.filePart)..<min(packed.count, (n + 1) * SyncCore.filePart))
+                    try await server.putTextPart(rid, n, try SyncCore.sealData(chunk, kind: .file, context: "\(rid):\(n)", key: key))
                 }
-                readSends.removeAll { ($0["cid"] as? String) == cid && ($0["file"] as? String) == f }
-                readSends.append(["id": rid, "cid": cid, "file": f, "parts": parts, "size": packed.count, "sha256": sha, "at": Date().timeIntervalSince1970])
-                readSent[k] = stamp
-                sent += 1; bytes += packed.count
+            } catch {
+                try? await server.deleteText(rid, parts: parts)
+                lastError = "Text versions for the iPhone: " + error.localizedDescription; break
             }
+            if let old = texts[k], let oid = old["id"] as? String, let p = old["parts"] as? Int { try? await server.deleteText(oid, parts: p) }
+            texts[k] = ["id": rid, "parts": parts, "size": packed.count, "sha256": sha, "stamp": stamp]
+            recheck.remove(k); changed = true
+            saveState()                                                 // after each upload, so a quit never loses track of one
         }
-        if sent > 0 { saveState(); planChanged(soon: true) }
+        // PDFs no longer in the course folders: their text goes from the library
+        let here = Set(all.map { $0.cid + "/" + $0.f })
+        for (k, t) in texts where !here.contains(k) {
+            if let id = t["id"] as? String, let p = t["parts"] as? Int { try? await server.deleteText(id, parts: p) }
+            texts[k] = nil; changed = true
+        }
+        if changed { saveState(); planChanged(soon: true) }
     }
 
     // MARK: changes from the phone
@@ -359,7 +378,6 @@ final class PhoneSync {
                         applied.append(id); drop.append(name)
                         Task { @MainActor [weak self] in await self?.mirror() }
                     } else if (op["kind"] as? String) == "readGot" {
-                        readSends.removeAll { ($0["id"] as? String) == (op["rid"] as? String ?? "-") }
                         applied.append(id); drop.append(name)
                     } else if (op["kind"] as? String) == "marks" {
                         applyPhoneMarks(op); applied.append(id); drop.append(name)
@@ -538,10 +556,9 @@ final class PhoneSync {
     /// sent again by the next mirror().
     private func expireFiles() {
         let cut = Date().timeIntervalSince1970 - 14 * 86400
-        let old = fileSends.filter { ($0["at"] as? Double ?? 0) < cut } + readSends.filter { ($0["at"] as? Double ?? 0) < cut }
+        let old = fileSends.filter { ($0["at"] as? Double ?? 0) < cut }
         guard !old.isEmpty else { return }
-        for o in readSends where (o["at"] as? Double ?? 0) < cut { readSent[(o["cid"] as? String ?? "") + "/" + (o["file"] as? String ?? "")] = nil }   // sent again
-        fileSends.removeAll { ($0["at"] as? Double ?? 0) < cut }; readSends.removeAll { ($0["at"] as? Double ?? 0) < cut }; saveState()
+        fileSends.removeAll { ($0["at"] as? Double ?? 0) < cut }; saveState()
         guard let server else { return }
         Task { for o in old { if let id = o["id"] as? String, let p = o["parts"] as? Int { try? await server.deleteFile(id, parts: p) } } }
     }

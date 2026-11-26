@@ -63,33 +63,47 @@ final class PhoneFiles {
     /// The reading version of a PDF (the Mac's Docling text for the book reader), when it has arrived.
     func rurl(_ k: String) -> URL { dir.appendingPathComponent(String(hex(Data(k.utf8)).prefix(24)) + ".reading.json") }
     func reading(_ k: String) -> String? { rindex[k] != nil ? try? String(contentsOf: rurl(k), encoding: .utf8) : nil }
-    /// Reading versions the Mac sent (snapshot "readSends"), one at a time: small, so no progress is shown.
+    /// The library on the Worker (snapshot "texts", since 26 Nov 2026): every reading version the Mac made, kept there.
+    /// The phone fetches each one it lacks or has an older copy of, one at a time (small, so no progress), and leaves
+    /// the pieces in place. One that cannot be fetched is skipped for this run and asked for again (the Mac uploads it anew).
+    private var rfailed = Set<String>()                     // library ids that failed this run
     private func checkReading(_ snap: [String: Any]) {
         guard !rbusy else { return }
-        for e in snap["readSends"] as? [[String: Any]] ?? [] {
+        let list = snap["texts"] as? [[String: Any]] ?? []
+        let open = list.filter { e in
             let k = Self.key(e["cid"] as? String ?? "", e["file"] as? String ?? "")
-            guard let sha = e["sha256"] as? String, rindex[k] != sha else { continue }
-            rbusy = true
-            Task { await downloadReading(e, k, sha); rbusy = false; check() }
-            return
+            guard let sha = e["sha256"] as? String, let id = e["id"] as? String else { return false }
+            return rindex[k] != sha && !rfailed.contains(id)
+        }
+        // the ones asked for first, then the rest in the Mac's order
+        guard let e = open.first(where: { asked[Self.key($0["cid"] as? String ?? "", $0["file"] as? String ?? "")] != nil }) ?? open.first else { return }
+        let k = Self.key(e["cid"] as? String ?? "", e["file"] as? String ?? "")
+        rbusy = true
+        Task {
+            if await !downloadReading(e, k, e["sha256"] as? String ?? "") {
+                rfailed.insert(e["id"] as? String ?? "")
+                await Sync.shared.push(["kind": "fileReq", "cid": e["cid"] ?? "", "file": e["file"] ?? ""])
+            }
+            rbusy = false; check()
         }
     }
-    private func downloadReading(_ e: [String: Any], _ k: String, _ sha: String) async {
-        guard let key = Sync.shared.key, let server = Sync.shared.server, let id = e["id"] as? String, let parts = e["parts"] as? Int, parts > 0, parts <= 400 else { return }
+    private func downloadReading(_ e: [String: Any], _ k: String, _ sha: String) async -> Bool {
+        guard let key = Sync.shared.key, let server = Sync.shared.server, let id = e["id"] as? String, let parts = e["parts"] as? Int, parts > 0, parts <= 400 else { return false }
         do {
             var packed = Data()
             for n in 0..<parts {
-                guard let d = try await server.filePart(id, n) else { return }
+                guard let d = try await server.textPart(id, n) else { return false }
                 packed.append(try SyncCore.openData(d, kind: .file, context: "\(id):\(n)", key: key))
             }
             let json = try (packed as NSData).decompressed(using: .zlib) as Data
-            guard hex(json) == sha else { return }
+            guard hex(json) == sha else { return false }
             try json.write(to: rurl(k), options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
-            rindex[k] = sha; bmarks[k] = nil; prune(k); save()
-            try? await server.deleteFile(id, parts: parts)
+            rindex[k] = sha; bmarks[k] = nil; asked[k] = nil; status[k] = nil; prune(k); save()
             Sync.shared.event(["type": "readerReading", "key": k, "ready": true])
-            await Sync.shared.push(["kind": "readGot", "cid": e["cid"] ?? "", "file": e["file"] ?? "", "sha256": sha, "rid": id])
-        } catch {}
+            return true
+        } catch {
+            return (error as? URLError) != nil ? true : false   // offline: not a broken entry, tried again at the next sync
+        }
     }
 
     /// The marks in the reading version kept here; nil when it came from an older Mac build without them.

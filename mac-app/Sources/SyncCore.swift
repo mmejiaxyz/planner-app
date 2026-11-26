@@ -205,6 +205,20 @@ enum SyncCore {
         func putFilePart(_ id: String, _ n: Int, _ d: Data) async throws { try await putAudio(id, n, d) }
         func filePart(_ id: String, _ n: Int) async throws -> Data? { try await audio(id, n) }
         func deleteFile(_ id: String, parts: Int) async throws { try await deleteAudio(id, parts: parts) }
+        /// Kept reading versions (the Worker's text/ store, never cleared by a fetch): the phone's library.
+        func putTextPart(_ id: String, _ n: Int, _ d: Data) async throws { _ = try await request("text/\(id)/\(n)", "PUT", body: d) }
+        func textPart(_ id: String, _ n: Int) async throws -> Data? {
+            let (d, h) = try await request("text/\(id)/\(n)")
+            return h.statusCode == 200 ? d : nil
+        }
+        func deleteText(_ id: String, parts: Int) async throws {
+            guard SyncCore.cloudAllowed else { throw Failure(message: SyncCore.cloudOff) }
+            var r = URLRequest(url: URL(string: url.absoluteString + "/text/\(id)?parts=\(parts)")!)
+            r.httpMethod = "DELETE"; r.timeoutInterval = 30
+            r.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
+            let (_, resp) = try await URLSession.shared.data(for: r)
+            guard (resp as? HTTPURLResponse)?.statusCode == 200 else { throw Failure(message: "Could not delete a text version on the sync server") }
+        }
         /// The Worker's counters: audioBytes is what recordings and PDFs take in the part store right now.
         func status() async throws -> [String: Any] {
             let (d, _) = try await request("status")

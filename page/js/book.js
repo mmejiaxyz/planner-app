@@ -862,7 +862,7 @@ function bkEvent(ev){
   if(!READ) return false;
   if(ev.type==='readerReading'){
     if(READ.phone ? ev.key!==READ.phone.cid+'/'+READ.phone.file : ev.path!==READ.path) return true;
-    if(ev.ready && READ.phone && (READ.fetch || (!READ.docOpen && !READ.book))){ rdOpenText(); return true; }   /* the text came before the PDF */
+    if(ev.ready && READ.phone && (READ.fetch || !READ.book)){ rdOpenText(); return true; }   /* the text came: it replaces the wait or an old PDF copy without text */
     if(ev.ready){
       APP.call('readingGet', READ.phone ? {cid:READ.phone.cid, file:READ.phone.file} : {path:READ.path}).then(async r=>{
         if(!READ || !r.ready) return;
