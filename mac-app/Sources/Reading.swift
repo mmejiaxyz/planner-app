@@ -12,6 +12,8 @@ final class Reading {
     static let shared = Reading()
     static let version = 1
     weak var bridge: Bridge?
+    /// a reading version was made (true) or could not be (false): the phone sync sends it at once when the phone asked
+    var onDone: ((String, Bool) -> Void)?
     let dir: URL = {
         let u = Paths.support.appendingPathComponent("reading", isDirectory: true)
         try? FileManager.default.createDirectory(at: u, withIntermediateDirectories: true)
@@ -160,6 +162,7 @@ final class Reading {
                 if let md = try? JSONSerialization.data(withJSONObject: m) { try? md.write(to: meta(file), options: .atomic) }
                 working = nil
                 bridge?.event(["type": "readerReading", "path": file, "ready": ready(file)])
+                onDone?(file, ready(file))
             } else {
                 fail(file, o["error"] as? String ?? "Could not make the reading version")
             }
@@ -171,6 +174,7 @@ final class Reading {
         failed[path + "@" + String(Reading.stamp(path)["m"] ?? 0)] = error
         if working?.path == path { working = nil }
         bridge?.event(["type": "readerReading", "path": path, "ready": false, "error": error])
+        onDone?(path, false)
     }
 
     private func ended() {

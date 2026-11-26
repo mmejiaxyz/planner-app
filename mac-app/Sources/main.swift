@@ -2634,6 +2634,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         phone.applyMarks = { [weak bridge] u, add, remove in try bridge?.reader.applyPhoneMarks(u, add: add, remove: remove) }
         phone.bridgeFlush = { [weak bridge] u in if let r = bridge?.reader, r.url?.standardizedFileURL.path == u.standardizedFileURL.path { r.flush() } }
         bridge.store.onWrite = { Task { @MainActor in phone.planChanged() } }
+        Reading.shared.onDone = { path, ok in Task { @MainActor in phone.textDone(path, ok: ok) } }   // a text the phone asked for goes at once
         phone.planChanged()
         Timer.scheduledTimer(withTimeInterval: 900, repeats: true) { _ in Task { @MainActor in phone.planChanged() } }
         let backup = bridge.backup   // off-device copy on the Worker: checked every 30 minutes, sent when changed, at most every 6 h

@@ -219,13 +219,15 @@ function bkRender(){
   host.classList.toggle('ui', READ.mode==='page' || !!READ.pop || !!READ.find || host.classList.contains('ui'));
   host.classList.toggle('bk-phone', !!PHONE);
   host.classList.toggle('bk-fetch', !!READ.fetch);
-  if(READ.fetch){ const v = document.getElementById('bk-flow'), f = READ.fetch; if(v) v.innerHTML = '<div class="bk-wait">'+(f.state==='downloading' ? 'Getting the PDF from the Mac: '+Math.round(100*(f.progress||0))+'%'
-      : f.state==='error' ? esc(f.error||'Could not get the PDF.')+'<div class="crow"><button class="btn pri" data-rd="refetch">Try again</button></div>'
-      : 'This PDF is not on the phone yet. The Mac sends every course PDF whenever Planner is open there; this one is now first in line, and it opens here as soon as it arrives.'+(f.state==='late' ? '<div class="crow"><button class="btn" data-rd="refetch">Ask again</button></div>' : ''))+'</div>'; }
+  if(READ.fetch){ const v = document.getElementById('bk-flow'), f = READ.fetch; if(v) v.innerHTML = '<div class="bk-wait">'+(f.state==='textless'
+      ? '<p>The Mac could not make a text version of this file, and PDFs do not come to the phone. Read it on the Mac.</p>'
+      : '<div class="bk-dl" role="progressbar" aria-label="Getting the text version"><i></i></div>'   /* the download animation (27 Nov 2026, the user's request) */
+        + '<p>Getting the text version from the Mac</p><p class="muted">It is made on the Mac first and opens here by itself. Planner needs to be open on the Mac.</p>'
+        + (Date.now() - (f.since||0) > 120000 ? '<div class="crow"><button class="btn" data-rd="refetch">Ask again</button></div>' : ''))+'</div>'; }
   const top = document.getElementById('bk-top');
   if(top) top.innerHTML = '<button class="bk-ib" data-bk="close" title="Back to the planner" aria-label="Close">'+(PHONE ? BK_ICON.close : BK_ICON.back)+'</button>'
     + '<div class="bk-title">'+esc(READ.title || rdName())+'</div>'
-    + (PHONE && READ.book ? '<span class="bk-tp" role="group" aria-label="View"><button class="'+(READ.mode==='text'?'on':'')+'" data-bk="'+(READ.mode==='text'?'':'toggle')+'">Text</button><button class="'+(READ.mode==='page'?'on':'')+'" data-bk="'+(READ.mode==='page'?'':'toggle')+'">Page</button></span>' : '')
+    + (PHONE && READ.book && READ.docOpen ? '<span class="bk-tp" role="group" aria-label="View"><button class="'+(READ.mode==='text'?'on':'')+'" data-bk="'+(READ.mode==='text'?'':'toggle')+'">Text</button><button class="'+(READ.mode==='page'?'on':'')+'" data-bk="'+(READ.mode==='page'?'':'toggle')+'">Page</button></span>' : '')
     + '<span class="bk-tools"><button class="bk-ib'+(READ.panel==='explain'?' on':'')+'" data-bk="reexplain" title="'+((READ.topics||[]).length || (READ.thread||[]).length ? 'Back to Explain (E): your session, nothing is sent' : 'Explain (E): ask about this text')+'">'+BK_ICON.explain+'</button>'+(READ.mode==='text' ? '<button class="bk-ib'+(READ.find?' on':'')+'" data-bk="find" title="Find (⌘F)">'+BK_ICON.search+'</button>' : '')
     + '<button class="bk-ib'+(READ.pop==='menu'?' on':'')+'" data-bk="menu" title="Contents and more">'+BK_ICON.menu+'</button>'
     + '<button class="bk-ib bk-aa'+(READ.pop==='aa'?' on':'')+'" data-bk="aa" title="Text size and theme">Aa</button></span>';
@@ -304,7 +306,7 @@ function bkRanges(bi){
 function bkBlockHTML(b){
   if(b.k==='fig'){
     const pg = b.r && b.r[0] ? b.r[0].pg : 1;
-    return '<figure class="bk-fig" data-b="'+b.i+'"><button class="lnk" data-bk="orig" data-pg="'+pg+'">Figure on p. '+esc(bkLabel(pg))+' · show the original page</button>'+(b.t ? '<figcaption>'+esc(b.t)+'</figcaption>' : '')+'</figure>';
+    return '<figure class="bk-fig" data-b="'+b.i+'">'+(PHONE && !READ.docOpen ? '<span class="faint">Figure on p. '+esc(bkLabel(pg))+' · on the Mac</span>' : '<button class="lnk" data-bk="orig" data-pg="'+pg+'">Figure on p. '+esc(bkLabel(pg))+' · show the original page</button>')+(b.t ? '<figcaption>'+esc(b.t)+'</figcaption>' : '')+'</figure>';
   }
   const t = b.t, rs = bkRanges(b.i), fn = b.fn || [];
   const cuts = new Set([0, t.length]);
@@ -801,10 +803,7 @@ function bkNotes(){
 function bkMode(mode){
   if(!READ) return;
   /* the phone with only the text: the original page comes from the Mac when he asks for it */
-  if(mode==='page' && READ.phone && !READ.docOpen){
-    if(!READ.wantPage){ READ.wantPage = true; READ.note = 'Getting the original page from the Mac. It opens when it arrives.'; APP.call('fileGet', {cid:READ.phone.cid, file:READ.phone.file}).catch(e=>{ if(READ){ READ.wantPage = false; READ.note = e.message; bkRender(); } }); }
-    return bkRender();
-  }
+  if(mode==='page' && READ.phone && !READ.docOpen){ READ.note = 'Only the text comes to the phone. The original page is on the Mac.'; return bkRender(); }
   READ.mode = mode; READ.pop = null; READ.bsel = null; READ.define = null;
   if(PHONE) APP.call('readerQuiet', {on:mode==='text'}).catch(()=>{});
   if(mode==='page'){

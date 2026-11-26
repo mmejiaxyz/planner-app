@@ -63,6 +63,9 @@ final class PhoneSync {
     private var readSends: [[String: Any]] = []         // {id, cid, file, parts, sha256 (of the JSON), size, at}
     private var readSent: [String: String] = [:]        // "cid/file" -> stamp (reading version date @ PDF date) last uploaded
     private var mirroring = false
+    /// Never a PDF to the phone (27 Nov 2026, the user's rule: "I dont want to ever send the pdf to the phone, only text
+    /// version"): a phone request (fileReq) makes that file's reading version first and sends it as soon as it is ready.
+    private var wanted: [String] = []                   // "cid/file" the phone asked for, sent first
     static let mirrorBudget = 120 << 20                 // PDFs waiting on the server at most (recordings share a 200 MB cap)                    // known names the phone's reader hides from DeepSeek (the page's helpNames)
     var applyMarks: (@MainActor (URL, [[String: Any]], [[String: Any]]) throws -> Void)?   // file, marks to add, marks to remove
     private var uploading = false
@@ -88,6 +91,8 @@ final class PhoneSync {
             readSends = o["readSends"] as? [[String: Any]] ?? []
             readSent = o["readSent"] as? [String: String] ?? [:]
         }
+        // PDFs uploaded for the phone before the text-only rule are withdrawn: the phone no longer sees them in the snapshot
+        // and their parts on the Worker are deleted (dropPDFs, on the first mirror)
     }
 
     var server: SyncCore.Server? {
@@ -210,7 +215,8 @@ final class PhoneSync {
         let ev = await cal.events(from: from, to: to)
         let events = (ev["status"] as? String) == "granted" ? (ev["events"] as? [[String: Any]] ?? []) : []
         expireFiles()
-        var body: [String: Any] = ["plan": store.snapshot(), "events": events, "applied": Array(applied.suffix(300)),
+        var plan = store.snapshot(); plan["textless"] = textless()   // files with no text version: the phone says so instead of waiting
+        var body: [String: Any] = ["plan": plan, "events": events, "applied": Array(applied.suffix(300)),
                                    "files": coursePDFs(), "fileSends": fileSends.map { $0.filter { $0.key != "at" } }, "marked": marked, "names": names,
                                    "readSends": readSends.map { $0.filter { $0.key != "at" } }]
         if let web = await webForSnapshot(key: key, server: server) { body["web"] = web }
@@ -231,34 +237,36 @@ final class PhoneSync {
     func mirror() async {
         guard active, !mirroring, let server else { return }
         mirroring = true; defer { mirroring = false }
+        let old = fileSends.filter { $0["error"] == nil }
+        if !fileSends.isEmpty {
+            fileSends = []; saveState(); planChanged(soon: true)
+            for o in old { if let p = o["parts"] as? Int, let id = o["id"] as? String { try? await server.deleteFile(id, parts: p) } }
+        }
         await mirrorReading()
-        let waiting = Set(fileSends.filter { $0["error"] == nil }.map { ($0["cid"] as? String ?? "") + "/" + ($0["file"] as? String ?? "") + "@" + String($0["m"] as? Int ?? 0) })
-        var todo: [(cid: String, file: String, size: Int, m: Int, linked: Bool)] = []
         var make: [(path: String, linked: Bool)] = []
         for c in store.courses {
             guard let cid = c["id"] as? String, let dir = courseFolder(cid) else { continue }
             let linked = Set((c["tasks"] as? [[String: Any]] ?? []).filter { ($0["status"] as? String) != "done" }.flatMap { $0["files"] as? [String] ?? [] })
             for e in Self.pdfList(dir) {
-                let f = e["f"] as? String ?? "", m = e["m"] as? Int ?? 0, s = e["s"] as? Int ?? 0, k = cid + "/" + f
-                let path = dir.appendingPathComponent(f).path
-                switch Reading.shared.state(path) {
-                case "ready", "working", "queued": continue                         // the text goes instead (or soon will)
-                case "none" where Help.inDocs(path) != nil: make.append((path, linked.contains(f))); continue
-                default: break                                                    // missing or failed: the PDF goes
-                }
-                guard s > 0, s <= SyncCore.maxFile, onPhone[k] != m, !waiting.contains(k + "@" + String(m)) else { continue }
-                todo.append((cid, f, s, m, linked.contains(f)))
+                let f = e["f"] as? String ?? "", path = dir.appendingPathComponent(f).path
+                if Reading.shared.state(path) == "none", Help.inDocs(path) != nil { make.append((path, linked.contains(f))) }   // only the text ever goes
             }
         }
         if !make.isEmpty { _ = Reading.shared.ahead(make.filter { $0.linked }.map { $0.path } + make.filter { !$0.linked }.map { $0.path }) }
-        guard !todo.isEmpty else { return }
-        todo.sort { $0.linked != $1.linked ? $0.linked : $0.m > $1.m }
-        var used = (try? await server.status())?["audioBytes"] as? Int ?? Self.mirrorBudget
-        for x in todo {
-            if used + x.size + x.size / 50 > Self.mirrorBudget { break }
-            await sendFile(cid: x.cid, file: x.file)
-            used += x.size + x.size / 50
-        }
+    }
+
+    /// The phone asked for a file: its reading version goes first in line and is sent the moment it is made.
+    func wantText(cid: String, file: String) {
+        let k = cid + "/" + file
+        readSent[k] = nil                                      // asked again: the phone does not have it, send it again
+        if !wanted.contains(k) { wanted.insert(k, at: 0) }
+        if let u = pdfURL(cid: cid, file: file) { _ = Reading.shared.get(u.path) }
+        Task { @MainActor [weak self] in await self?.mirror() }
+    }
+    /// Reading.onDone: a reading version the phone is waiting for is ready (or failed): send now, or tell the phone.
+    func textDone(_ path: String, ok: Bool) {
+        guard !wanted.isEmpty else { return }
+        Task { @MainActor [weak self] in await self?.mirror() }
     }
 
     /// Reading versions the phone does not have yet: small (a 100-page scan is about 50 KB compressed), so they go
@@ -268,12 +276,20 @@ final class PhoneSync {
     private func mirrorReading() async {
         guard let key, let server else { return }
         var sent = 0, bytes = 0
+        // every course PDF with a reading version; the ones the phone asked for first
+        var all: [(cid: String, dir: URL, f: String)] = []
         for c in store.courses {
             guard let cid = c["id"] as? String, let dir = courseFolder(cid) else { continue }
-            for e in Self.pdfList(dir) {
+            for e in Self.pdfList(dir) { all.append((cid, dir, e["f"] as? String ?? "")) }
+        }
+        all.sort { wanted.contains($0.cid + "/" + $0.f) && !wanted.contains($1.cid + "/" + $1.f) }
+        do {
+            for (cid, dir, f) in all {
                 if sent >= 40 || bytes > 8 << 20 { break }
-                let f = e["f"] as? String ?? "", k = cid + "/" + f, path = dir.appendingPathComponent(f).path
+                let k = cid + "/" + f, path = dir.appendingPathComponent(f).path
+                if Reading.shared.state(path) == "failed" { wanted.removeAll { $0 == k } }   // no text can be made: the phone says so
                 guard Reading.shared.ready(path) else { continue }
+                wanted.removeAll { $0 == k }
                 bridgeFlush?(dir.appendingPathComponent(f))                 // marks still waiting to be written go in first
                 let stamp = String(Self.mtime(Reading.shared.json(path))) + "@" + String(Self.mtime(dir.appendingPathComponent(f)))
                 if readSent[k] == stamp { continue }
@@ -333,10 +349,9 @@ final class PhoneSync {
                         }
                     } else if (op["kind"] as? String) == "set" {
                         var o = op; o["id"] = id; waiting[id] = o
-                    } else if (op["kind"] as? String) == "fileReq" {
+                    } else if (op["kind"] as? String) == "fileReq" {   // never the PDF: its text version, made first
                         applied.append(id); drop.append(name)
-                        let cid = op["cid"] as? String ?? "", file = op["file"] as? String ?? ""
-                        Task { @MainActor [weak self] in await self?.sendFile(cid: cid, file: file) }
+                        wantText(cid: op["cid"] as? String ?? "", file: op["file"] as? String ?? "")
                     } else if (op["kind"] as? String) == "fileGot" {
                         let k = (op["cid"] as? String ?? "") + "/" + (op["file"] as? String ?? "")
                         if let m = op["m"] as? Int { onPhone[k] = m }
@@ -447,6 +462,19 @@ final class PhoneSync {
             ((try? fm.contentsOfDirectory(atPath: dir.appendingPathComponent(d).path)) ?? []).filter(isPDF).prefix(200).forEach { add(d + "/" + $0) }
         }
         return out.sorted { ($0["f"] as? String ?? "") < ($1["f"] as? String ?? "") }
+    }
+
+    /// Course PDFs the Mac cannot make a reading version of (Docling missing, or it failed), as plan docs {id: "cid/file"}.
+    private func textless() -> [[String: Any]] {
+        var out: [[String: Any]] = []
+        for c in store.courses {
+            guard let id = c["id"] as? String, let dir = courseFolder(id) else { continue }
+            for e in Self.pdfList(dir) {
+                let f = e["f"] as? String ?? ""
+                if ["failed", "missing"].contains(Reading.shared.state(dir.appendingPathComponent(f).path)) { out.append(["id": id + "/" + f]) }
+            }
+        }
+        return out
     }
 
     private func coursePDFs() -> [String: Any] {

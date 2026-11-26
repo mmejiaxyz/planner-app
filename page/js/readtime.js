@@ -7,6 +7,7 @@
    Saved on close, when the window goes to the background, and every RT_SAVE seconds of reading. */
 const RT_IDLE = 120e3, RT_TICK = 5e3, RT_SAVE = 300;
 let READS = {};
+let TEXTLESS = new Set();   /* the phone: course files without a text version on the Mac (PhoneSync's snapshot) */
 /* A page counts as read after RT_DWELL seconds of reading on it (27 Nov 2026, the user's rule for Hardcover: pages actually
    read count, selected chapters too, never the page number he jumped to). One spread can hold more than one PDF page, so
    moving on by up to 3 pages after a read page counts the pages in between. */

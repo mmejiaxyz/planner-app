@@ -49,10 +49,10 @@ async function openReader(path, ctx={}){
   if(ph){
     try{ READ.dsKey = !!(await APP.call('dsStatus')).key; }catch(e){}
     const x = (PFILES[ph.cid]||[]).find(y=>y.f===ph.file);
-    /* the Mac sends the text (the reading version, with the PDF's marks); the PDF only when there is no text (25 Nov 2026) */
-    if(x && x.reading && (!x.cached || !x.current)) return rdOpenText();
+    /* only the text comes to the phone, never a PDF (27 Nov 2026, the user's rule: "I dont want to ever send the pdf to the
+       phone, only text version"). A PDF copy from before stays readable here; nothing newer is fetched. */
+    if(x && x.reading) return rdOpenText();
     if(!x || !x.cached){ rdFetch(); return; }
-    if(!x.current){ READ.note = 'A newer copy is on the Mac. Getting it; you can read this one meanwhile.'; APP.call('fileGet', {cid:ph.cid, file:ph.file}).catch(()=>{}); }
   }
   await rdOpenDoc();
 }
@@ -94,15 +94,20 @@ async function rdOpenText(){
   }catch(e){ if(READ===me) READ.error = e.message; }
   rdRender();
 }
-/* the phone: ask the Mac for the PDF; it opens when it arrives (readerFileEvent) */
+/* the phone: ask the Mac for the text version (the Mac makes it first and sends it, never the PDF); it opens when it
+   arrives (readerReading in book.js). A file the Mac cannot make text of is named in the plan snapshot (TEXTLESS). */
 async function rdFetch(){
   if(!READ || !READ.phone) return;
-  READ.fetch = {state:'asking'}; READ.error = ''; rdRender();
+  READ.fetch = {state:rdTextless() ? 'textless' : 'text', since:Date.now()}; READ.error = ''; rdRender();
+  if(READ.fetch.state==='textless') return;
+  const me = READ; setTimeout(()=>{ if(READ===me && READ.fetch) rdRender(); }, 121000);   /* shows Ask again after two minutes */
   try{ await APP.call('fileGet', {cid:READ.phone.cid, file:READ.phone.file}); }catch(e){ if(READ) READ.fetch = {state:'error', error:e.message}; }
   rdRender();
 }
+const rdTextless = () => !!(READ && READ.phone && typeof TEXTLESS!=='undefined' && TEXTLESS.has(READ.phone.cid+'/'+READ.phone.file));
 function readerFileEvent(ev){
   if(!READ || !READ.phone || ev.key!==READ.phone.cid+'/'+READ.phone.file) return;
+  if(READ.fetch && /^text/.test(READ.fetch.state||'')) return;   /* waiting for the text: PDF events no longer matter */
   if(READ.wantPage && !READ.fetch){   /* the original page asked for from the text */
     if(ev.ready){ READ.wantPage = false; READ.note = ''; rdOpenDoc().then(()=>{ if(READ && READ.book) bkMode('page'); }); }
     else if(ev.state==='error'){ READ.wantPage = false; READ.note = ev.error || 'The original page could not be got from the Mac.'; rdRender(); }
