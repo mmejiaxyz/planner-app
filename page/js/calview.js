@@ -219,7 +219,7 @@ function cvWeekDay(d, work, all){
     + '<div class="band"><div class="dh"><b>'+parse(d).getDate()+'</b><span class="mono">'+esc(fmt(d,{weekday:'short'}))+'</span></div>'
     +   '<div class="ld"><i class="w" style="width:'+Math.min(100,w/CV_WFULL*100)+'%"></i><i class="c" style="width:'+Math.min(100,cal/CV_WFULL*100)+'%"></i></div>'
     +   '<div class="lh mono"><span title="planned work + classes and calendar">'+r1(w)+' h + '+r1(cal)+' h</span>'+(heavy?'<span class="hv">heavy</span>':'')+'</div></div>'
-    + '<div class="band b-due"><span class="bl mono">Due</span>'+(dls.length ? dls.map(({c,d:dl})=>isSession(c,dl) ? '<div class="mx-ss">'+esc(dl.title)+' · '+esc(c.short)+'</div>' : '<div class="mx-dp">'+prioMark(dl)+'Due · '+esc(dl.title)+' · '+esc(c.short)+'</div>').join('') : '<div class="empty">—</div>')+'</div>'
+    + '<div class="band b-due"><span class="bl mono">Due</span>'+(dls.length ? dls.map(({c,d:dl})=>isSession(c,dl) ? '<div class="mx-ss" title="'+esc(dl.title+' · '+c.short)+'">'+esc(dl.title)+' · '+esc(c.short)+'</div>' : '<div class="mx-dp" title="'+esc('Due · '+dl.title+' · '+c.short)+'">'+prioMark(dl)+'Due · '+esc(dl.title)+' · '+esc(c.short)+'</div>').join('') : '<div class="empty">—</div>')+'</div>'
     + '<div class="band b-ev"><span class="bl mono">Classes &amp; events'+(IN_APP && CAL_STATUS==='granted' ? ' <button class="lnk" data-cv-new="'+esc(d)+'" aria-label="New event on '+esc(fmtShort(d))+'" title="New event">+</button>' : '')+'</span>'+(ev.length ? ev.map(r=>r.h).join('') : '<div class="empty">—</div>')+'</div>'
     + '<div class="band b-tk"><span class="bl mono">Tasks</span>'
     +   (od.length?'<a class="pcarry" href="#today">'+ICON.warn+'<span>'+od.length+' carried over</span></a>':'')
