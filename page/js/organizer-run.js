@@ -197,8 +197,8 @@ async function runCompose(){
       compose.model = r.model || '';
       compose.stage = 'check'; paintProgress();
       if(!r.text) throw new Error('No model answered. '+(r.errors||[]).join(' · '));
-      raw = extractJSON(r.provider==='ollama' ? r.text : restore(r.text, red.map));
-      compose.hidden = r.provider==='ollama' ? 0 : Object.keys(red.map).length;
+      raw = extractJSON(restore(r.text, red.map));
+      compose.hidden = Object.keys(red.map).length;
       arr(raw && raw.tasks).forEach(t=>{ if(t && typeof t==='object') delete t.asked; });   /* "asked" is set only in code */
       /* Second look (19 Nov 2026, the user's question: why the helper "can't think how to solve little things"): what code could not
          use goes back to the model once, with the reasons, instead of ending as a warning. The fix is kept only if it leaves fewer problems. */
@@ -209,7 +209,7 @@ async function runCompose(){
         try{
           const full2 = repairPrompt(full, raw, probs), red2 = redact(full2);
           const r2 = await APP.call('llm', {prompt: full2, remotePrompt: red2.text, sid: sid+'b', schema: PLAN_SCHEMA, order: [r.provider], model: 'sonnet'}); compose.fixModel = r2.model || '';
-          const raw2 = r2.text ? extractJSON(r2.provider==='ollama' ? r2.text : restore(r2.text, red2.map)) : null;
+          const raw2 = r2.text ? extractJSON(restore(r2.text, red2.map)) : null;
           if(raw2){ arr(raw2.tasks).forEach(t=>{ if(t && typeof t==='object') delete t.asked; });
             const asks = arr(raw2.questions).length && !arr(raw2.tasks).length && !arr(raw2.updates).length && !arr(raw2.events).length;
             const left = asks ? 0 : repairList(raw2, said0).length;

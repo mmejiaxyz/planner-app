@@ -153,7 +153,7 @@ async function setupRead(c, S, stage, alive){
   const r = await APP.call('llm', {prompt: full, remotePrompt: red.text, schema: ONB_SCHEMA, order: llmOrder(), model:'opus'});   /* Opus since 24 Nov 2026 (the user's choice): set up is rare and reads long documents */
   if(!alive()) return null;
   if(!r.text) throw new Error('No model answered. '+(r.errors||[]).join(' · '));
-  const raw = extractJSON(r.provider==='ollama' ? r.text : restore(r.text, red.map));
+  const raw = extractJSON(restore(r.text, red.map));
   const qs = arr(raw.questions).map(str).filter(q=>q.trim()).slice(0,3);
   const found = arr(raw.sessions).length + arr(raw.dates).length + arr(raw.deliverables).length + arr(raw.tasks).length;
   /* questions first, once or twice; after that whatever was found is shown */

@@ -14,7 +14,7 @@ function detectOnline(){ const t = REC.tools||{}, ev = callNow(); return t.callA
 let TOPICS = {topics:[]}, CHATS = {}, CHAT = {topic:'All', draft:'', busy:false, error:'', clustering:false};
 const freshCompose = () => ({draft:'', thread:[], busy:false, error:'', provider:'', questions:null, proposal:null, inboxId:null, done:''});
 let compose = freshCompose();
-const PROV = {claude:'Claude Haiku (Pro)', ollama:'Ollama (local)', amp:'Amp'};
+const PROV = {claude:'Claude Haiku (Pro)', gemini:'Gemini 4 Hydrogen', amp:'Amp'};
 const cnm = id => (cById(id)||{}).short || id;
 /* a real calendar date: no rollover ("2026-11-31", "2027-02-30" are not dates; 19 Nov 2026 user test) */
 const validDate = s => { if(!/^\d{4}-\d{2}-\d{2}$/.test(s||'')) return false; const d = parse(s); return !isNaN(d) && iso(d)===s; };

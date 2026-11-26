@@ -56,17 +56,10 @@ function redact(text, opts={}){
 function restore(text, map){ let t = String(text||''); Object.keys(map).sort((a,b)=>b.length-a.length).forEach(k=>{ const inner = k.slice(1,-1).replace(/ /g,'\\s*'); t = t.replace(new RegExp('\\[?'+inner+'\\]?(?!\\d)','g'), JSON.stringify(map[k]).slice(1,-1)); }); return t; }
 
 /* input field */
-/* One model setting for the whole app (7 Nov 2026, the user's request): Claude unless he picks Local, and the local model when the Mac is offline.
-   Claude first still falls back to the local model when Claude does not answer. */
-const wantsLocal = () => ((PREFS && PREFS.order) || ['claude'])[0]==='ollama';
+/* Models (26 Nov 2026): Claude for planning, Gemini (Antigravity CLI) for summaries. The local model (Ollama) is gone, so with the Mac offline nothing is asked. */
 const offline = () => typeof navigator!=='undefined' && navigator.onLine===false;
-const useLocal = () => wantsLocal() || offline();
-const llmOrder = () => useLocal() ? ['ollama'] : ['claude','ollama'];
-function modelPicker(){
-  const cur = wantsLocal() ? 'ollama' : 'claude';
-  const opts = [['claude,ollama','Claude','claude'],['ollama','Local','ollama']];
-  return '<label class="mpick">Model <select id="pref-order">'+opts.map(([v,l,k])=>'<option value="'+v+'"'+(k===cur?' selected':'')+'>'+l+'</option>').join('')+'</select></label>'+(offline() && !wantsLocal() ? ' <span class="faint">offline, using Local</span>' : '');
-}
+const llmOrder = () => ['claude'];
+function modelPicker(){ return offline() ? '<span class="faint">Offline: the planner needs the internet</span>' : ''; }
 function composerBlock(){
   if(!IN_APP) return '';
   const c = compose;
@@ -1118,9 +1111,8 @@ function normEvents(list){
   return out;
 }
 const evChangeCount = p => (p.events||[]).length;
-/* Claude Haiku checks suggested tasks against the plan. Only task titles go out, redacted.
-   Skipped when the model setting is Local or the Mac is offline. */
-function haikuAllowed(){ return !useLocal(); }
+/* Claude Haiku checks suggested tasks against the plan. Only task titles go out, redacted. Skipped when the Mac is offline. */
+function haikuAllowed(){ return !offline(); }
 async function dropRepeats(p){
   if(!p.tasks.length || !haikuAllowed()) return p;
   const from = addDays(TODAY,-21);

@@ -88,7 +88,7 @@ function usageView(){
 }
 
 /* ---------- AI calls: feature (the calling file and function), model, time, tokens, cost, errors ---------- */
-const U_AI = ['llm','llmStream','helpAsk'];
+const U_AI = ['llm','helpAsk'];
 function usageCaller(){
   const lines = String(new Error().stack||'').split('\n');
   for(const l of lines){ const m = l.match(/^(?:async\*)?([\w$.]*)@.*\/js\/([\w-]+)\.js/) || l.match(/at\s+([\w$.]+)\s+\(.*\/js\/([\w-]+)\.js/);

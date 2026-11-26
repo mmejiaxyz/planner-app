@@ -17,7 +17,7 @@ async function draftMessage(key, ask){
   try{
     const r = await APP.call('llm', {prompt, remotePrompt: red.text, order: llmOrder()});
     if(!r.text) throw new Error('No model answered. '+(r.errors||[]).join(' · '));
-    DRAFTS[key].text = String(r.provider==='ollama' ? r.text : restore(r.text, red.map)).trim();
+    DRAFTS[key].text = String(restore(r.text, red.map)).trim();
   }catch(e){ DRAFTS[key].error = e.message; }
   DRAFTS[key].busy = false; render();
 }
@@ -225,7 +225,7 @@ async function modelRange(info, want){
   const prompt = 'These are the first pages of a book. Find the reading "'+want+'" in its table of contents. Reply with JSON only: {"start":"printed page number where it starts","end":"printed page number where it ends"}, or {"start":null} if it is not listed.\n\n'+String(info.front).slice(0, 30000);
   try{
     const red = redact(prompt, {heuristics:false}), r = await APP.call('llm', {prompt, remotePrompt: red.text, order: llmOrder()});
-    const j = extractJSON(r.provider==='ollama' ? r.text : restore(r.text, red.map)), a = printedToPdf(info, parseInt(j.start,10)), b = printedToPdf(info, parseInt(j.end,10));
+    const j = extractJSON(restore(r.text, red.map)), a = printedToPdf(info, parseInt(j.start,10)), b = printedToPdf(info, parseInt(j.end,10));
     return a && b && b >= a ? {from:a, to:b, title:want, breaks:[]} : null;
   }catch(e){ return null; }
 }

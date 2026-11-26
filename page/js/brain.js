@@ -87,7 +87,7 @@ const inTopic = (m, topic) => topic==='All' || (m.topics||[]).includes(topic);
 /* C2: answers as reading text on a dark panel */
 function chatBlock(){
   const thread = CHATS[CHAT.topic] || [];
-  let h = '<section class="chat2" aria-label="Chat with your notes"><div class="c2head"><span class="chip2">'+esc(CHAT.topic==='All'?'All notes':CHAT.topic)+'</span><span class="muted2">'+(useLocal()?'On this Mac':'Claude, names hidden')+' · summaries and transcripts</span>'+(thread.length?'<button class="lnk2" data-chat="clear">Clear</button>':'')+'</div><div class="thread2" id="thread2">';
+  let h = '<section class="chat2" aria-label="Chat with your notes"><div class="c2head"><span class="chip2">'+esc(CHAT.topic==='All'?'All notes':CHAT.topic)+'</span><span class="muted2">Claude, names hidden · summaries and transcripts</span>'+(thread.length?'<button class="lnk2" data-chat="clear">Clear</button>':'')+'</div><div class="thread2" id="thread2">';
   if(!thread.length) h += '<div class="empty2">Ask about '+(CHAT.topic==='All'?'anything in your meetings and plan':'“'+esc(CHAT.topic)+'”')+'. For example: what did we decide about the script structure?</div>';
   thread.forEach(m=>{
     if(m.role==='user') h += '<div class="q2">'+esc(m.text)+'</div>';
@@ -235,7 +235,7 @@ Return JSON: {"answer":"...","sources":[note numbers you used]}`));
     }
     thread.push({role:'assistant', text:answer, cites, ms:Date.now()-t0, at:new Date().toISOString()});
     await saveChats();
-  }catch(e){ CHAT.error = (useLocal() ? 'The local model' : 'Claude')+' did not answer: '+e.message; thread.pop(); CHAT.draft = q; }
+  }catch(e){ CHAT.error = 'Claude did not answer: '+e.message; thread.pop(); CHAT.draft = q; }
   CHAT.busy = false; render();
 }
 /* D6 + D1: topics as nested rectangles, meetings as points placed by date */
@@ -369,7 +369,7 @@ function meetingView(m){
   const menu = MV.menu ? '<div class="mx-menu" role="menu">'
     + '<label>Course <select id="m-course">'+courseOptions(m.course)+'</select></label>'
     + '<button data-brain="summarize"'+(m._busy?' disabled':'')+'>'+(m.summary||m.summaryMarkdown?'Summarize again':'Summarize')+'</button>'
-    + '<div class="mx-mrow">Model <button class="lnk'+(sumEngine()==='haiku'?' on':'')+'" data-brain="sum-haiku" title="Claude Haiku for the whole app, names, links and numbers hidden">Claude</button> · <button class="lnk'+(sumEngine()==='local'?' on':'')+'" data-brain="sum-local" title="Ollama on this Mac for the whole app. Nothing leaves the Mac; slower.">On this Mac</button></div>'
+    + '<div class="mx-mrow faint">Summaries by Gemini 4 Hydrogen, names, links and numbers hidden</div>'
     + (m.audio?'<button data-brain="retranscribe">Transcribe again</button>':'')
     + '<button data-mv="notes">'+(MV.notes?'Hide your notes':'Your notes')+'</button>'
     + ((m.topics||[]).length?'<div class="mx-mrow">Topic '+m.topics.map(t=>'<button class="lnk" data-topic="'+esc(t)+'" data-brain="back">'+esc(t)+'</button>').join(', ')+'</div>':'')
@@ -432,7 +432,7 @@ let STREAM = null;
 function sessionChat(m){
   const th = m.chat||[];
   const sug = ['What did we decide?','Quiz me on this session','What should I bring next time?'].concat(m.separated?['Where did I talk?']:[]);
-  let h = '<section class="mx-cv chat" aria-label="Talk about this session"><div class="hd"><b>Talk about this session</b><span class="mono">'+(useLocal()?'on this Mac':'Claude')+'</span>'+(th.length?'<button class="lnk" data-brain="askclear">'+(m._armChat?'Clear the chat for good?':'Clear')+'</button>':'')+'</div>';
+  let h = '<section class="mx-cv chat" aria-label="Talk about this session"><div class="hd"><b>Talk about this session</b><span class="mono">Claude</span>'+(th.length?'<button class="lnk" data-brain="askclear">'+(m._armChat?'Clear the chat for good?':'Clear')+'</button>':'')+'</div>';
   h += '<div class="thread" id="m-thread">'+(th.length ? th.map(c=>c.role==='user' ? '<div class="mx-q">'+esc(c.text)+'</div>' : '<div class="mx-a">'+seekLinks(md(c.text))+'</div>').join('') : '<div class="empty">Ask anything about it: what a concept means here, or what to do before the next session.</div>')+'</div>';
   if(m._asking) h += m._stream!=null ? '<div class="mx-a" id="m-stream">'+(m._stream?md(m._stream):'<span class="muted">Reading the session… <span class="lt mono"></span></span>')+'</div>' : '<div class="muted">Working out planner changes '+modelWhere()+'… <span class="lt mono"></span></div>';
   if(!m._asking) h += '<div class="mx-sug">'+sug.map(q=>'<button data-mvsug="'+esc(q)+'">'+esc(q)+'</button>').join('')+'</div>';
@@ -450,13 +450,6 @@ function sessionContext(m, q, budget){
   picked.sort((a,b)=>a.i-b.i);
   return picked.map(c=>'['+clockLabel(c.t)+'] '+c.text).join('\n');
 }
-/* Local planning: clicking into the note box loads the model (about 3 s) so it is ready when you press Plan it. Nothing is read ahead and nothing runs while you are not planning. */
-function prewarmPlan(){
-  if(!IN_APP || !ready || !useLocal() || compose.busy) return;
-  if(Date.now()-(prewarmPlan.at||0) < 5*60000) return; prewarmPlan.at = Date.now();
-  APP.call('llmWarm').catch(()=>{});
-}
-function warmLocal(){ const n = Date.now(); if(n - (warmLocal.at||0) < 120000) return; warmLocal.at = n; try{ APP.call('llmWarm').catch(()=>{}); }catch(e){} }
 async function sessionAsk(m){
   const q = String(m._ask||'').trim(); if(!q || m._asking) return;
   m.chat = m.chat||[]; m.chat.push({role:'user', text:q, at:new Date().toISOString()}); m._ask = ''; m._asking = true; m._error = ''; render();
@@ -482,12 +475,10 @@ Question: ${q}
 
 Answer in the language of the question. Use what was said in the session first and give its time like [12:30]. If general knowledge helps explain a concept, add it and say it is not from the session. Clear and concrete, short paragraphs or a short list, Markdown.`;
       let r = null;
-      if(!useLocal()){
-        red = redact(prompt);
-        r = await APP.call('llm', {prompt, remotePrompt: red.text, order:['claude'], sid});
-        if(r.text) r.text = restore(r.text, red.map);
-      }
-      if(!r || !r.text){ red = null; raw = ''; m._stream = ''; r = await APP.call('llmStream', {sid, prompt}); }
+      red = redact(prompt);
+      r = await APP.call('llm', {prompt, remotePrompt: red.text, order:['claude'], sid});
+      if(!r.text) throw new Error((r.errors||[]).join(' · ') || 'Claude did not answer.');
+      r.text = restore(r.text, red.map);
       STREAM = null; localTimer(false);
       m.chat.push({role:'assistant', text:String(r.text||'').trim()||'No answer.', at:new Date().toISOString()});
       m._stream = null; await saveMeeting(m);
@@ -524,7 +515,7 @@ ${rulesText()}
 Reply with JSON only: {"answer":"...","plan":${SHAPE.split('\n')[0]}}
 "plan" is optional.`));
     m.chat.push({role:'assistant', text:String(raw.answer||'').trim()||'No answer.', at:new Date().toISOString()});
-    if(raw.plan && typeof raw.plan==='object'){ EVREFS = []; const p = await dropRepeats(normalize(raw.plan, useLocal() ? 'ollama' : 'claude', q)); if(hasChanges(p) || p.dropped.length) m._proposal = PENDING[m.id] = p; }
+    if(raw.plan && typeof raw.plan==='object'){ EVREFS = []; const p = await dropRepeats(normalize(raw.plan, 'claude', q)); if(hasChanges(p) || p.dropped.length) m._proposal = PENDING[m.id] = p; }
     await saveMeeting(m);
   }catch(e){ STREAM = null; localTimer(false); m._stream = null; m._error = e.message; m.chat.pop(); m._ask = q; }
   m._asking = false; render();
@@ -533,25 +524,28 @@ Reply with JSON only: {"answer":"...","plan":${SHAPE.split('\n')[0]}}
 async function saveMeeting(m){ const copy = {}; Object.keys(m).forEach(k=>{ if(k[0]!=='_') copy[k] = m[k]; }); await APP.call('brainSave', {meeting:copy}); BRAIN = await APP.call('brainList'); }
 let LOCAL_T0 = 0, localTick = null;
 function localTimer(on){ clearInterval(localTick); if(!on) return; LOCAL_T0 = Date.now(); localTick = setInterval(()=>{ document.querySelectorAll('.lt').forEach(el=>el.textContent = Math.round((Date.now()-LOCAL_T0)/1000)+' s'); }, 1000); }
-async function localLLM(prompt, schema){ localTimer(true); try{ return await localLLM0(prompt, schema); } finally { localTimer(false); } }
-/* Brain questions and topics: Claude Haiku, redacted, unless the model is Local or the Mac is offline. When Claude does not answer, the local model does. */
-const modelWhere = () => useLocal() ? 'on this Mac' : 'with Claude';
+/* Brain questions, topics and planner changes from a meeting: Claude Haiku, redacted. */
+const modelWhere = () => 'with Claude';
 async function brainLLM(prompt, schema){
-  if(useLocal()) return localLLM(prompt, schema);
   localTimer(true);
   try{
-    const red = redact(prompt), a = {prompt, remotePrompt: red.text, order:['claude','ollama']};
+    const red = redact(prompt), a = {prompt: red.text, remotePrompt: red.text, order:['claude']};
     if(schema) a.schema = schema;
     const r = await APP.call('llm', a);
-    if(!r.text) throw new Error((r.errors||[]).join(' · ') || 'Neither Claude nor the local model answered.');
-    return r.provider==='claude' ? restore(r.text, red.map) : r.text;
+    if(!r.text) throw new Error((r.errors||[]).join(' · ') || (offline() ? 'The Mac is offline.' : 'Claude did not answer.'));
+    return restore(r.text, red.map);
   } finally { localTimer(false); }
 }
-async function localLLM0(prompt, schema){ const r = await APP.call('llm', schema ? {prompt, order:['ollama'], schema} : {prompt, order:['ollama']}); if(!r.text) throw new Error((r.errors||[]).join(' · ') || 'The local model did not answer. Is Ollama running?'); return r.text; }
+const haikuLLM = prompt => brainLLM(prompt);
 const PENDING = {};
-/* Summaries: Haiku (redacted, as in task help) unless the app's model is Local or the Mac is offline. Only when he asks (Summarize). */
-const sumEngine = () => useLocal() ? 'local' : 'haiku';
-async function haikuLLM(prompt){ const red = redact(prompt); const r = await APP.call('llm', {prompt: red.text, remotePrompt: red.text, order:['claude']}); if(!r.text) throw new Error((r.errors||[]).join(' · ') || 'Claude did not answer.'); return restore(r.text, red.map); }
+/* Summaries (26 Nov 2026, the user's request: "for summarizing texts use the best model possible"): Gemini 4 Hydrogen at
+   its highest effort through the Antigravity CLI (his Google AI plan), redacted like Claude. Claude Sonnet answers when
+   Gemini does not. Only when he asks (Summarize). */
+async function summaryLLM(prompt){
+  const red = redact(prompt), r = await APP.call('llm', {prompt: red.text, remotePrompt: red.text, order:['gemini','claude'], model:'sonnet'});
+  if(!r.text) throw new Error((r.errors||[]).join(' · ') || (offline() ? 'The Mac is offline.' : 'Neither Gemini nor Claude answered.'));
+  return restore(r.text, red.map);
+}
 /* Transcripts are only ever English or Spanish; the summary is written in the transcript's language. Decided here by counting common words, not by the model. */
 const ES_WORDS = new Set('que de la el en y los las por para con una un es no lo se del al como pero más esto eso está están porque también muy todo hay tiene ser ya sí cuando entonces bueno vamos'.split(' '));
 const EN_WORDS = new Set('the and to of a in is that it you for this on with was are be have we not but so what they at do can if just like there about will one your'.split(' '));
@@ -564,28 +558,18 @@ async function summarizeMeeting(m, opts){
   let ok = false;
   const full = (m.segments||[]).map(s=>'['+clockLabel(s.t)+']'+(s.sp?'['+spkName(s.sp)+'] ':' ')+s.text).join('\n');
   if(!full.trim()){ m._error = 'There is no transcript to summarize.'; render(); return; }
-  const cloud = sumEngine()==='haiku', ask = cloud ? haikuLLM : localLLM;
-  m._busy = cloud ? 'Summarizing with Haiku…' : 'Summarizing on this Mac…'; m._error = ''; m._note = ''; m._moved = ''; setLocalJob(m.id, m.title||'Meeting', 'summarizing', {pct:0}); render();
+  m._busy = 'Summarizing with Gemini… this can take a few minutes'; m._error = ''; m._note = ''; m._moved = ''; setLocalJob(m.id, m.title||'Meeting', 'summarizing', {pct:0}); render();
   try{
-    /* Haiku reads the whole transcript at once; the local model gets parts of 14,000 characters */
-    const chunks = []; for(let i=0;i<full.length;i+=(cloud ? full.length : 14000)) chunks.push(full.slice(i,i+(cloud ? full.length : 14000)));
-    let notes = full;
-    if(chunks.length > 1){
-      const parts = [];
-      for(let i=0;i<chunks.length;i++){ m._busy = 'Reading part '+(i+1)+' of '+chunks.length+'…'; render(); parts.push(await localLLM('Write dense bullet notes of this part of a meeting transcript. Keep names, decisions, dates, numbers and anything someone has to do. Return JSON: {"notes":"..."}\n\n'+chunks[i])); }
-      notes = parts.map(p=>{ try{ return extractJSON(p).notes; }catch(e){ return p; } }).join('\n');
-    }
-    m._busy = 'Writing the summary…'; render();
     const lang = transcriptLang(full.replace(/\[(?:You|Meeting)\]/g,''));
-    const o = extractJSON(await ask(`You summarize a meeting for a design and media student. The transcript is in ${lang==='es'?'Spanish':'English'}. Write the title, summary, decisions, actions and points in ${lang==='es'?'Spanish':'English'}. Keep the JSON keys in English.
+    const o = extractJSON(await summaryLLM(`You summarize a meeting for a design and media student. The transcript is in ${lang==='es'?'Spanish':'English'}. Write the title, summary, decisions, actions and points in ${lang==='es'?'Spanish':'English'}. Keep the JSON keys in English.
 Courses the meeting may belong to (pick by what the work is, not by one shared word):
 ${courses.map(c=>'- '+c.id+' = '+c.short+' ('+c.name+')'+(c.note?': '+c.note:'')).join('\n')}
 Today is ${TODAY}. "actions" are things someone agreed to do; owner is "me" for the student. Lines marked [You] are the student and [Meeting] is everyone else on the call: use that to attribute decisions and actions.
 Return JSON only:
 {"title":"short title","course":"course id or empty","topic":"one of: ${topicNames().join(', ')||'none yet'}, or a new 2 to 4 word topic","summary":"4 to 6 plain sentences","decisions":["..."],"actions":[{"text":"what has to be done","owner":"me or a name","due":"YYYY-MM-DD or null"}],"points":["at most 8 key points"]}
 
-${chunks.length>1?'Notes from the meeting':'Transcript'}:
-${notes}`));
+Transcript:
+${full}`));
     if(!m.title || /^Meeting \d|^m-\d/.test(m.title) || m.titleAuto) { m.title = String(o.title||m.title||''); delete m.titleAuto; }
     if(cById(o.course) && o.course!==m.course && !m.courseSet){ if(m.course) m._moved = 'Filed under '+cnm(o.course)+' (was '+cnm(m.course)+'). Change the course above if that is wrong.'; m.course = o.course; }
     m.summaryLang = lang; m.summary = String(o.summary||''); m.decisions = (o.decisions||[]).map(String); m.points = (o.points||[]).map(String);
@@ -600,11 +584,10 @@ ${notes}`));
 }
 async function planFromMeeting(m){
   if(!m.summary && !m.summaryMarkdown){ await summarizeMeeting(m, {noPlan:true}); if(m._error) return; }
-  const cloud = sumEngine()==='haiku';
-  m._busy = cloud ? 'Working out planner changes with Haiku…' : 'Working out planner changes on this Mac…'; m._error = ''; m._note = ''; m._proposal = null; render();
+  m._busy = 'Working out planner changes with Haiku…'; m._error = ''; m._note = ''; m._proposal = null; render();
   try{
     const ids = m.course ? [m.course] : null;   /* readings and time history: the meeting's course only */
-    const raw = extractJSON(await (cloud ? haikuLLM : localLLM)(`You update a student's study planner from a meeting.
+    const raw = extractJSON(await brainLLM(`You update a student's study planner from a meeting.
 Today is ${TODAY} (${fmt(TODAY,{weekday:'long'})}).
 
 Courses and deliverables:
@@ -638,7 +621,7 @@ ${rulesText()}
 Reply with JSON only:
 ${SHAPE}`, PLAN_SCHEMA));
     EVREFS = [];
-    const p = normalize(raw, cloud ? 'claude' : 'ollama', [m.notes||'', (m.actions||[]).map(a=>a.text+(a.due?' by '+a.due:'')).join('; ')].join(' '));
+    const p = normalize(raw, 'claude', [m.notes||'', (m.actions||[]).map(a=>a.text+(a.due?' by '+a.due:'')).join('; ')].join(' '));
     if(p.tasks.length && haikuAllowed()){ m._busy = 'Checking for tasks you already have…'; render(); }
     await dropRepeats(p);
     m.plannerChecked = new Date().toISOString(); await saveMeeting(m);
@@ -656,12 +639,11 @@ if(IN_APP){
     if(ev.type==='helpOcr'){ helpOcr(ev); return; }
     if(ev.type==='llmChunk'){ if(STREAM && STREAM.sid===ev.sid) STREAM.on(ev.text||''); return; }
     if(ev.type==='meeting'){ RECSTAGE = ev.stage==='recovering' ? 'Recovering an unfinished recording…' : ev.stage==='converting' ? 'Converting the file…' : ev.stage==='separating' ? 'Separating your voice from the meeting…' : ev.stage==='mixing' ? 'Mixing the audio…' : ev.stage==='transcribing' ? 'Transcribing with Whisper on this Mac…' : RECSTAGE; render(); } };
-  document.addEventListener('focusin', e=>{ if(e.target && e.target.id==='cmp-text') prewarmPlan(); });
 document.addEventListener('input', e=>{
     const el = e.target;
     if(el.id==='cmp-text') compose.draft = el.value;
     if(el.id==='chat-q') CHAT.draft = el.value;
-    if(el.id==='m-ask' && BRAIN_OPEN){ BRAIN_OPEN._ask = el.value; warmLocal(); }
+    if(el.id==='m-ask' && BRAIN_OPEN){ BRAIN_OPEN._ask = el.value; }
     if(el.id==='ss' && BRAIN_OPEN){ stageSearch(el.value); }
     if(el.id==='rec-title'){ REC.title = el.value; if(REC.recording) saveDraft(); }
     if(el.id==='rec-notes'){ REC.notes = el.value; saveDraft(); }
@@ -686,7 +668,6 @@ document.addEventListener('input', e=>{
   document.addEventListener('change', e=>{
     const el = e.target;
     if(el.id==='pref-private'){ APP.call('prefs', {privateWords: el.value}).then(p=>{ PREFS = p; render(); }); return; }
-    if(el.id==='pref-order'){ APP.call('prefs', {order: el.value.split(',')}).then(p=>{ PREFS = p; render(); }); return; }
     if(el.dataset && el.dataset.pe !== undefined){ const p = propOf(el); const x = p && p.events && p.events[+el.dataset.pe]; if(x) x[el.dataset.pf] = el.value; return; }
     if(el.dataset && el.dataset.pi !== undefined){ const p = propOf(el); if(!p) return; const t = p.tasks[+el.dataset.pi], f = el.dataset.pf; t[f] = f==='est' ? Math.min(100, Math.max(0.25, Number(el.value)||t.est)) : el.value;   /* hours: 0.25 to 100 (19 Nov 2026 user test: 1e9 h was saved) */ if(f==='due') t.pinned = true; if(f==='est') t.estNote = ''; if(f==='course' && deskOnly(cById(t.course))) t.where = 'desk'; render(); return; }
     if(el.id==='m-title' && BRAIN_OPEN){ BRAIN_OPEN.title = el.value; saveMeeting(BRAIN_OPEN); }
@@ -778,7 +759,7 @@ document.addEventListener('input', e=>{
       catch(err){ RECSTAGE = ''; REC.error = err.message; render(); }
       return;
     }
-    if(d.brain==='open'){ if(!BRAIN_OPEN || BRAIN_OPEN.id!==d.id) AUD.pause(); BRAIN_OPEN = await APP.call('brainGet', {id:d.id}); warmLocal(); if(PENDING[d.id]) BRAIN_OPEN._proposal = PENDING[d.id]; else if(BRAIN_OPEN.summary && !BRAIN_OPEN.plannerChecked && !BRAIN_OPEN.plannerUpdated && String(BRAIN_OPEN.created||'')>=addDays(TODAY,-7)) planFromMeeting(BRAIN_OPEN); if(tab!=='brain') location.hash = 'brain'; render(); window.scrollTo(0,0); return; }
+    if(d.brain==='open'){ if(!BRAIN_OPEN || BRAIN_OPEN.id!==d.id) AUD.pause(); BRAIN_OPEN = await APP.call('brainGet', {id:d.id}); if(PENDING[d.id]) BRAIN_OPEN._proposal = PENDING[d.id]; else if(BRAIN_OPEN.summary && !BRAIN_OPEN.plannerChecked && !BRAIN_OPEN.plannerUpdated && String(BRAIN_OPEN.created||'')>=addDays(TODAY,-7)) planFromMeeting(BRAIN_OPEN); if(tab!=='brain') location.hash = 'brain'; render(); window.scrollTo(0,0); return; }
     if(d.brain==='back'){ AUD.pause(); BRAIN_OPEN = null; return render(); }
     if(d.brain==='summarize') return summarizeMeeting(BRAIN_OPEN);
     if(d.brain==='retranscribe'){
@@ -789,7 +770,6 @@ document.addEventListener('input', e=>{
       catch(e){ if(BRAIN_OPEN && BRAIN_OPEN.id===id){ BRAIN_OPEN._busy = ''; BRAIN_OPEN._error = e.message; } }
       return render();
     }
-    if(d.brain==='sum-haiku' || d.brain==='sum-local'){ APP.call('prefs', {order: d.brain==='sum-local' ? ['ollama'] : ['claude','ollama']}).then(p=>{ PREFS = p; render(); }); return; }
     if(d.brain==='plan') return planFromMeeting(BRAIN_OPEN);
     if(d.brain==='ask') return sessionAsk(BRAIN_OPEN);
     if(d.brain==='askclear'){ if(!BRAIN_OPEN._armChat){ BRAIN_OPEN._armChat = true; return render(); } BRAIN_OPEN.chat = []; BRAIN_OPEN._armChat = false; await saveMeeting(BRAIN_OPEN); return render(); }

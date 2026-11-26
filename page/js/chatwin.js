@@ -90,9 +90,9 @@ function chatRender(){
   const fresh = sig!==PCHAT.sig; PCHAT.sig = sig;
   if(!PCHAT.open){ host.innerHTML = '<button class="pc-launch" data-chatwin="open" title="Planner chat (⌘K)">'+(chatActive()?'<span class="pc-dot"></span>':'')+'<span>'+(chatActive()?'Planner chat':'Tell the planner something')+'</span><span class="pc-k">⌘K</span></button>'; return; }
   const prev = host.querySelector('.pc-msgs'), atEnd = !prev || prev.scrollHeight - prev.scrollTop - prev.clientHeight < 60, keep = prev ? prev.scrollTop : 0;
-  const ft = focusTask(), local = useLocal();
+  const ft = focusTask();
   host.innerHTML = '<section class="compose pchat" id="pchat" aria-label="Planner chat">'
-    + '<div class="pc-head"><div><h2>Planner</h2><div class="pc-sub">'+(local ? 'Local model · nothing leaves this Mac' : 'Claude · names, links and numbers hidden')+'</div></div><div class="pc-ctl">'
+    + '<div class="pc-head"><div><h2>Planner</h2><div class="pc-sub">'+'Claude · names, links and numbers hidden'+'</div></div><div class="pc-ctl">'
     + (c_any() ? '<button data-cmp="reset" title="Start over">⟲</button>' : '')+'<button data-chatwin="close" title="Make small (⌘K)">–</button></div></div>'
     + (ft ? '<div class="pc-ctx"><span>About <b>'+esc(ft.t.title)+'</b> <span class="muted">· '+esc(ft.c.short)+' · '+(ft.t.due?esc(fmtShort(ft.t.due)):'no day')+'</span></span><button class="lnk" data-cmp="unfocus">Clear</button></div>' : '')
     + '<div class="pc-msgs">'+chatMsgs()+'</div>'

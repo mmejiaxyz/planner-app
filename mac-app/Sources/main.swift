@@ -4,7 +4,7 @@
 //   calendar         events from Calendar.app (every account already set up on this Mac); read, add, change, delete
 //   inbox / inboxDone  the "Planner" list in Reminders (add items from the iPhone; they sync over iCloud), plus notes from the Planner iPhone app
 //   phoneOps / phoneOpsDone  changes made in the Planner iPhone app (PhoneSync.swift, SyncCore.swift, sync-worker/)
-//   llm              turn typed notes into tasks: Claude Haiku via the Claude Code CLI (Pro login), Ollama, or Amp
+//   llm              turn typed notes into tasks: Claude Haiku via the Claude Code CLI (Pro login); Gemini via the Antigravity CLI for summaries
 //   prefs            which model to try first
 //   help*            task help sessions: a context folder per course, redacted copies in a sandbox, Claude reads only those
 // Build with build.sh. No Xcode needed.
@@ -427,83 +427,43 @@ final class Models {
         return try await run(exe, ["-x"], stdin: prompt, timeout: 180)
     }
 
-    /// True if the Ollama server answers.
-    func ollamaUp() async -> Bool {
-        var r = URLRequest(url: URL(string: "http://127.0.0.1:11434/api/tags")!); r.timeoutInterval = 2
-        return ((try? await URLSession.shared.data(for: r))?.1 as? HTTPURLResponse)?.statusCode == 200
-    }
-    /// Start Ollama if it is not running: the Ollama app if installed, otherwise `ollama serve`. Waits up to 30 s.
-    func ensureOllama() async throws {
-        if await ollamaUp() { return }
-        if let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.electron.ollama") ?? NSWorkspace.shared.urlForApplication(withBundleIdentifier: "ai.ollama.Ollama") {
-            let cfg = NSWorkspace.OpenConfiguration(); cfg.activates = false; cfg.hides = true
-            _ = try? await NSWorkspace.shared.openApplication(at: app, configuration: cfg)
-        } else if let exe = find("ollama") {
-            let p = Process(); p.executableURL = URL(fileURLWithPath: exe); p.arguments = ["serve"]
-            p.standardOutput = FileHandle.nullDevice; p.standardError = FileHandle.nullDevice
-            try p.run()
-        } else { throw NSError(domain: "llm", code: 14, userInfo: [NSLocalizedDescriptionKey: "Ollama is not installed"]) }
-        for _ in 0..<60 { if await ollamaUp() { return }; try await Task.sleep(nanoseconds: 500_000_000) }
-        throw NSError(domain: "llm", code: 15, userInfo: [NSLocalizedDescriptionKey: "Ollama did not start in 30 s"])
-    }
-
-    /// `format`: a JSON Schema the answer must follow (Ollama structured output), or plain "json".
-    func ollama(_ prompt: String, model: String, format: Any = "json") async throws -> String {
-        try await ensureOllama()
-        var req = URLRequest(url: URL(string: "http://127.0.0.1:11434/api/generate")!)
-        req.httpMethod = "POST"; req.timeoutInterval = 300
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try JSONSerialization.data(withJSONObject: [
-            "model": model, "prompt": prompt, "stream": false, "format": format, "think": false,
-            "keep_alive": "10m",
-            "options": ["temperature": 0.1, "num_ctx": 16384],
-        ])
-        let (data, _) = try await URLSession.shared.data(for: req)
-        let o = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-        if let e = o?["error"] as? String { throw NSError(domain: "llm", code: 12, userInfo: [NSLocalizedDescriptionKey: e]) }
-        guard let r = o?["response"] as? String, !r.isEmpty else { throw NSError(domain: "llm", code: 13, userInfo: [NSLocalizedDescriptionKey: "Ollama gave no answer. Is it running?"]) }
-        return r
-    }
-
-    /// Plain-text answer from Ollama, streamed: `chunk` gets each new piece as the model writes it.
-    func ollamaStream(_ prompt: String, model: String, chunk: @escaping (String) async -> Void) async throws -> String {
-        try await ensureOllama()
-        var req = URLRequest(url: URL(string: "http://127.0.0.1:11434/api/generate")!)
-        req.httpMethod = "POST"; req.timeoutInterval = 300
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try JSONSerialization.data(withJSONObject: [
-            "model": model, "prompt": prompt, "stream": true, "think": false,
-            "keep_alive": "10m",
-            "options": ["temperature": 0.2, "num_ctx": 16384],
-        ])
-        let (bytes, _) = try await URLSession.shared.bytes(for: req)
-        var out = ""
-        for try await line in bytes.lines {
-            guard let o = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any] else { continue }
-            if let e = o["error"] as? String { throw NSError(domain: "llm", code: 12, userInfo: [NSLocalizedDescriptionKey: e]) }
-            if let r = o["response"] as? String, !r.isEmpty { out += r; await chunk(r) }
-            if o["done"] as? Bool == true { break }
+    /// Gemini through the Antigravity CLI (`agy`, his Google AI plan; 26 Nov 2026: summaries, "the best model possible").
+    /// Text in, text out, nothing else: in print mode agy's default agent runs shell commands, writes files and fetches
+    /// pages without asking (tested 26 Nov 2026), so it runs as a custom agent with no tools and no default prompt
+    /// (`excludeDefaultComponents`, 421 input tokens instead of 15,000: the tools are not sent), with deny rules for
+    /// commands, files and the network on top, in an empty folder of its own.
+    static let geminiAgent = """
+    ---
+    name: textonly
+    description: Answers from the text in the prompt only. No tools.
+    excludeDefaultComponents: true
+    tools: []
+    ---
+    You answer only from the text in the prompt. You have no tools: never try to read, write, run or fetch anything.
+    Placeholders like [Person 1] or [Link 2] stand for hidden names and links: keep them exactly as written.
+    """
+    static let geminiDeny = #"{"permissions":{"deny":["command(*)","unsandboxed(*)","read_file(*)","write_file(*)","edit(*)","file(*)","domain(*)","network(*)","fetch(*)","browser(*)","mcp(*)"]}}"#
+    func gemini(_ prompt: String, model: String) async throws -> String {
+        guard let exe = find("agy") else { throw NSError(domain: "llm", code: 16, userInfo: [NSLocalizedDescriptionKey: "Antigravity CLI (agy) not found"]) }
+        let dir = Paths.support.appendingPathComponent("gemini", isDirectory: true)
+        let agents = dir.appendingPathComponent(".agents/agents", isDirectory: true)
+        try FileManager.default.createDirectory(at: agents, withIntermediateDirectories: true)
+        try Models.geminiAgent.write(to: agents.appendingPathComponent("textonly.md"), atomically: true, encoding: .utf8)
+        // agy takes the prompt as an argument (its stream-json input wants its own event format); macOS allows about 1 MB of arguments.
+        guard prompt.utf8.count < 700_000 else { throw NSError(domain: "llm", code: 17, userInfo: [NSLocalizedDescriptionKey: "Too long for Gemini"]) }
+        let out = try await run(exe, ["--agent", "textonly", "--model", model, "--settings", Models.geminiDeny, "--output-format", "json", "--print-timeout", "900s", "-p", prompt],
+                                stdin: "", timeout: 960, cwd: dir)
+        guard let line = out.split(separator: "\n").last(where: { $0.hasPrefix("{") }), let d = line.data(using: .utf8),
+              let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else {
+            throw NSError(domain: "llm", code: 18, userInfo: [NSLocalizedDescriptionKey: String(out.trimmingCharacters(in: .whitespacesAndNewlines).suffix(300))])
         }
-        if out.isEmpty { throw NSError(domain: "llm", code: 13, userInfo: [NSLocalizedDescriptionKey: "Ollama gave no answer. Is it running?"]) }
-        return out
-    }
-
-    /// Load the model into memory ahead of a question, so the first answer does not wait for it.
-    /// Load the model; with `prefix`, also read that text now so a later prompt starting with it only has to read the rest.
-    func ollamaWarm(model: String, prefix: String = "") async {
-        guard (try? await ensureOllama()) != nil else { return }
-        var req = URLRequest(url: URL(string: "http://127.0.0.1:11434/api/generate")!)
-        req.httpMethod = "POST"; req.timeoutInterval = 300
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try? JSONSerialization.data(withJSONObject: prefix.isEmpty ? ["model": model, "keep_alive": "10m"] as [String: Any] :
-            ["model": model, "prompt": prefix, "stream": false, "format": "json", "think": false, "keep_alive": "10m",
-             "options": ["temperature": 0.1, "num_ctx": 16384, "num_predict": 1]] as [String: Any])
-        _ = try? await URLSession.shared.data(for: req)
+        if o["status"] as? String != "SUCCESS" { throw NSError(domain: "llm", code: 19, userInfo: [NSLocalizedDescriptionKey: (o["error"] as? String) ?? "Gemini did not answer"]) }
+        return o["response"] as? String ?? ""
     }
 
     /// Try providers in order; return the first answer.
-    /// `remote` is the redacted prompt (names, links, emails, numbers replaced) used for Claude and Amp; Ollama gets `prompt`.
-    func ask(_ prompt: String, remote: String, order: [String], ollamaModel: String, schema: [String: Any]? = nil, claudeModel: String = "haiku", chunk: (@Sendable (String) -> Void)? = nil) async -> [String: Any] {
+    /// `remote` is the redacted prompt (names, links, emails, numbers replaced); every provider gets only that.
+    func ask(remote: String, order: [String], geminiModel: String, claudeModel: String = "haiku", chunk: (@Sendable (String) -> Void)? = nil) async -> [String: Any] {
         var errors: [String] = []
         for prov in order {
             do {
@@ -511,7 +471,7 @@ final class Models {
                 switch prov {
                 case "claude": text = chunk != nil ? try await claudeStream(remote, model: claudeModel, chunk: chunk!) : try await claude(remote, model: claudeModel)
                 case "amp": text = try await amp(remote)
-                case "ollama": text = try await ollama(prompt, model: ollamaModel, format: schema.map { $0 as Any } ?? "json")
+                case "gemini": text = try await gemini(remote, model: geminiModel)
                 default: continue
                 }
                 if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { errors.append("\(prov): empty answer"); continue }
@@ -2158,8 +2118,8 @@ final class Bridge: NSObject, WKScriptMessageHandler {
     @MainActor lazy var reader: Reader = { let r = Reader(); r.bridge = self; return r }()
     let defaults = UserDefaults.standard
 
-    var order: [String] { defaults.stringArray(forKey: "modelOrder") ?? ["claude", "ollama"] }
-    var ollamaModel: String { defaults.string(forKey: "ollamaModel") ?? "gemma4:12b" }
+    var order: [String] { let o = (defaults.stringArray(forKey: "modelOrder") ?? []).filter { $0 != "ollama" }; return o.isEmpty ? ["claude"] : o }   // Ollama removed 26 Nov 2026
+    var geminiModel: String { defaults.string(forKey: "geminiModel") ?? "gemini-4-hydrogen-xhigh" }
 
     func userContentController(_ uc: WKUserContentController, didReceive message: WKScriptMessage) {
         guard let body = message.body as? [String: Any], let id = body["id"] as? Int, let op = body["op"] as? String else { return }
@@ -2201,7 +2161,6 @@ final class Bridge: NSObject, WKScriptMessageHandler {
         case "phoneNames": phone.setNames(a["names"] as? [String] ?? []); return ["ok": true]
         case "llm":
             let ord = (a["order"] as? [String]) ?? order
-            let local = a["prompt"] as? String ?? ""
             let sid = a["sid"] as? String ?? ""
             var onChunk: (@Sendable (String) -> Void)? = nil
             if !sid.isEmpty {
@@ -2214,26 +2173,16 @@ final class Bridge: NSObject, WKScriptMessageHandler {
                 }
             }
             let cm = ["sonnet", "opus"].contains(a["model"] as? String ?? "") ? (a["model"] as! String) : "haiku"
-            var res = await models.ask(local, remote: a["remotePrompt"] as? String ?? local, order: ord, ollamaModel: ollamaModel, schema: a["schema"] as? [String: Any], claudeModel: cm, chunk: onChunk)
+            var res = await models.ask(remote: a["remotePrompt"] as? String ?? a["prompt"] as? String ?? "", order: ord.filter { $0 != "ollama" }, geminiModel: geminiModel, claudeModel: cm, chunk: onChunk)
             if res["provider"] as? String == "claude" { res["model"] = cm }
+            if res["provider"] as? String == "gemini" { res["model"] = geminiModel }
             return res
-        case "llmStream":
-            let sid = a["sid"] as? String ?? ""
-            let text = try await models.ollamaStream(a["prompt"] as? String ?? "", model: ollamaModel) { [weak self] piece in
-                await MainActor.run { self?.event(["type": "llmChunk", "sid": sid, "text": piece]) }
-            }
-            return ["text": text, "provider": "ollama"]
-        case "llmWarm":
-            let m = ollamaModel
-            let pre = a["prefix"] as? String ?? ""
-            Task.detached { [models] in await models.ollamaWarm(model: m, prefix: pre) }
-            return ["ok": true]
         case "prefs":
             if let o = a["order"] as? [String] { defaults.set(o, forKey: "modelOrder") }
-            if let m = a["ollamaModel"] as? String { defaults.set(m, forKey: "ollamaModel") }
+            if let m = a["geminiModel"] as? String { defaults.set(m, forKey: "geminiModel") }
             if let w = a["privateWords"] as? String { defaults.set(w, forKey: "privateWords") }
-            return ["order": order, "ollamaModel": ollamaModel, "dataFile": Paths.plan.path, "privateWords": defaults.string(forKey: "privateWords") ?? "",
-                    "available": ["claude": models.find("claude") != nil, "amp": models.find("amp") != nil, "ollama": true]]
+            return ["order": order, "geminiModel": geminiModel, "dataFile": Paths.plan.path, "privateWords": defaults.string(forKey: "privateWords") ?? "",
+                    "available": ["claude": models.find("claude") != nil, "amp": models.find("amp") != nil, "gemini": models.find("agy") != nil]]
         case "updateCheck": return await Updater.check()
         case "updateApply":
             let r = await Updater.apply()

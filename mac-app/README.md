@@ -26,11 +26,12 @@ Before a build: `node --test ../test/*.test.js` (organizer tests) and `node ../t
 ## What runs where
 | Feature | Runs on | Notes |
 |---|---|---|
-| Input field on Today | Claude Haiku through the Claude Code CLI (`claude -p`, your Pro login), then local Ollama | Order can be changed under the field. Amp is listed but the account has no credit. |
+| Input field on Today | Claude Haiku through the Claude Code CLI (`claude -p`, your Pro login) | Needs the internet. Amp is listed but the account has no credit. |
 | Recording | This Mac | Two tracks, never mixed while recording: your microphone and, for online calls, the computer's own audio (ScreenCaptureKit). They are transcribed on their own and joined with "You" / "Meeting" labels, so overlapping speech and your own voice stay clear. The kept audio is one mixed copy for listening; your mic is gated to the lines the speech detector heard, so it is silent between your lines instead of adding room noise. |
 | Transcription | This Mac | `whisper-cli` from Homebrew (`brew install whisper-cpp`), Metal, with the bundled Silero voice activity detector (`vad/`) so silence is skipped instead of being "heard" as words. Nothing is transcribed while recording (saves CPU during calls); after Stop the accurate model transcribes each track (`ggml-large-v3-turbo*` if present, else the large one). A small model (`ggml-small*`, `ggml-base*` or `ggml-tiny*`), if present, only spots the spoken language. |
-| Summaries, Ask your notes, Update the planner from a meeting | This Mac only | Ollama `gemma4:12b`. Never sent to Claude. |
-| Repeat check on suggested tasks | Claude Haiku, redacted | Only task titles and course names go out, never transcripts or summaries. Skipped with "Local only". |
+| Meeting summaries | Gemini 4 Hydrogen (XHigh) through the Antigravity CLI (`agy`, your Google AI plan), redacted | Runs as a custom agent with no tools (`Application Support/Planner/gemini`), deny rules on top. Claude Sonnet answers when Gemini does not. Model: `defaults write <bundle id> geminiModel <id>` (`agy models` lists them). |
+| Ask your notes, Update the planner from a meeting | Claude Haiku, redacted | |
+| Repeat check on suggested tasks | Claude Haiku, redacted | Only task titles and course names go out, never transcripts or summaries. Skipped when the Mac is offline. |
 | Calendar | This Mac | Read only, through Calendar.app, so every mail account already set up there is included. |
 | iPhone inbox | iCloud Reminders | A Reminders list called "Planner". Items are ticked off once planned. |
 
@@ -38,4 +39,4 @@ Before a build: `node --test ../test/*.test.js` (organizer tests) and `node ../t
 Calendars, Reminders, Microphone, and Screen Recording (only to capture call audio; no images are kept). An ad-hoc signed rebuild may ask again.
 
 ## Page bridge
-The page talks to the app through `window.APP.call(op, args)`. Ops: `load`, `save`, `calendar`, `calendars`, `eventSave`, `eventDelete`, `inbox`, `inboxDone`, `llm`, `llmStream` (Ollama, streamed as `llmChunk` events), `llmWarm`, `prefs`, `recStatus`, `recStart`, `recStop`, `recCancel`, `brainList`, `brainGet`, `brainSave`, `brainDelete`, `importMeetily`, `reveal`, `revealBrain`, `pickFolder` (Set up › Link a folder). A `window.claude` shim maps the artifact database API onto `load`/`save`, so the same page also works as the claude.ai artifact (where the app features stay hidden).
+The page talks to the app through `window.APP.call(op, args)`. Ops: `load`, `save`, `calendar`, `calendars`, `eventSave`, `eventDelete`, `inbox`, `inboxDone`, `llm` (order `claude`, `gemini`, `amp`; with `sid` Claude streams `llmChunk` events), `prefs`, `recStatus`, `recStart`, `recStop`, `recCancel`, `brainList`, `brainGet`, `brainSave`, `brainDelete`, `importMeetily`, `reveal`, `revealBrain`, `pickFolder` (Set up › Link a folder). A `window.claude` shim maps the artifact database API onto `load`/`save`, so the same page also works as the claude.ai artifact (where the app features stay hidden).
