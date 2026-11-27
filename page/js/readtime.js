@@ -2,7 +2,8 @@
    want it for the backend, so that better predictions can be made"). Nothing is shown; the planner's reading pace uses it.
    It counts while the reader is open, the window is visible and in front, and something happened in the reader in the
    last RT_IDLE (a page turn, scroll, selection, key, pointer or touch). Kept per PDF as reads/<id> in the plan:
-   {id, cid, file, title, at:{pg, label}, sessions:[{id: device-day, d, dev, sec, p:[PDF pages seen while reading]}], hc?}.
+   {id, cid, file, title, at:{pg, label}, sessions:[{id: device-day, d, dev, sec, p:[PDF pages seen while reading], bf?}], hc?}.
+   bf: a session backfilled from finished reading tasks (id bf-<day>); its pages count as read, its time is what was reported.
    Sessions are per device and day, so the Mac and the phone never write the same one (the phone's merge by id keeps both).
    Saved on close, when the window goes to the background, and every RT_SAVE seconds of reading. */
 const RT_IDLE = 120e3, RT_TICK = 5e3, RT_SAVE = 300;
@@ -60,10 +61,10 @@ const rtSave = doc => dbh && dbh.doc('reads/'+doc.id).set(JSON.parse(JSON.string
 
 /* every page of this PDF read so far, on any device */
 const rtPagesRead = doc => new Set((doc && doc.sessions || []).flatMap(s=>s.p||[])).size;
-/* pages an hour measured while reading: a course's own after 30 minutes and 10 pages, else null */
+/* pages an hour measured while reading (not backfilled sessions, bf: pages from finished reading tasks before tracking began): a course's own after 30 minutes and 10 pages, else null */
 function trackedPace(cid){
   let sec = 0, pages = 0;
-  Object.values(READS).filter(r=>!cid || r.cid===cid).forEach(r=>(r.sessions||[]).forEach(s=>{ sec += s.sec||0; pages += (s.p||[]).length; }));
+  Object.values(READS).filter(r=>!cid || r.cid===cid).forEach(r=>(r.sessions||[]).filter(s=>!s.bf).forEach(s=>{ sec += s.sec||0; pages += (s.p||[]).length; }));
   return sec >= 1800 && pages >= 10 ? pages/(sec/3600) : null;
 }
 /* hours read in a PDF, for the reading tasks that cover those pages (later: planned vs actual in the prompts) */

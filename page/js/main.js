@@ -45,14 +45,15 @@ function widgetSnap(){
 function pushWidget(){ if(!IN_APP || !courses.length) return; clearTimeout(widgetTimer); widgetTimer = setTimeout(()=>{ try{ APP.call('widget', {snap: widgetSnap()}).catch(()=>{}); }catch(e){} }, 2500); }
 
 /* ---------- render ---------- */
-const TABS = ['today','calendar','courses','all-tasks','brain','tasks'];   /* tasks: the phone's one list (phone.js) */
+const TABS = ['today','calendar','courses','all-tasks','library','brain','tasks'];   /* tasks: the phone's one list (phone.js) */
 function render(){
   document.querySelectorAll('nav.tabs a').forEach(a=>{ if(a.dataset.tab===tab) a.setAttribute('aria-current','page'); else a.removeAttribute('aria-current'); });
   if(!courses.length){ if(typeof PHONE!=='undefined' && PHONE && ready) document.getElementById('app').innerHTML = phoneBlock(true); return; }   /* the phone before its first plan: pair or wait for the Mac */
   const app = document.getElementById('app');
   const ae = document.activeElement, fid = ae && ae.id, sel = fid && ('selectionStart' in ae) ? [ae.selectionStart, ae.selectionEnd] : null;
   if(typeof PHONE!=='undefined' && PHONE){ app.innerHTML = phRender(); document.querySelectorAll('nav.tabs a').forEach(a=>{ if(a.dataset.tab===tab) a.setAttribute('aria-current','page'); else a.removeAttribute('aria-current'); }); phSheets(); }
-  else app.innerHTML = tab==='today'?viewToday(): tab==='calendar'?viewCalendar(): tab==='courses'?viewCourses(): tab==='brain'?viewBrain(): viewAll();
+  else app.innerHTML = tab==='today'?viewToday(): tab==='calendar'?viewCalendar(): tab==='courses'?viewCourses(): tab==='brain'?viewBrain(): tab==='library'?viewLibrary(): viewAll();
+  if(tab==='library' && typeof libLayout==='function') libLayout();   /* the shelf is drawn from the width it has (library.js) */
   if(typeof IN_APP!=='undefined' && IN_APP) pushWidget();
   if(typeof usageView==='function') usageView();   /* usage log: tab and calendar level (usage.js) */
   if(typeof chatRender==='function') chatRender();   /* the floating planner chat (chatwin.js) */
@@ -122,7 +123,8 @@ document.addEventListener('click', e=>{
     c.tasks = c.tasks.filter(x=>x!==t); save(c);
     render(); return;
   }
-  else if(b.dataset.act==='context'){ compose = freshCompose(); compose.focus = {course:c.id, id:t.id}; chatOpen(true); render(); setTimeout(()=>{ const el = document.getElementById('cmp-text'); if(el) el.focus(); }, 60); return; }
+  else if(b.dataset.act==='context'){ if(typeof HELP!=='undefined' && HELP && !HELP.busy){ HELP = null; }   /* Ask the planner: the window is the planner again (one window) */
+    compose = freshCompose(); compose.focus = {course:c.id, id:t.id}; chatOpen(true); render(); setTimeout(()=>{ const el = document.getElementById('cmp-text'); if(el) el.focus(); }, 60); return; }
   else return;
   save(c); render();
 });
@@ -197,7 +199,7 @@ setInterval(checkDay, 60000); window.addEventListener('focus', checkDay); docume
     if(IN_APP && !all.some(c=>c.id===ADMIN_ID)){ const c = {id:ADMIN_ID, name:'Admin', short:'Admin', kind:'project', group:'Personal', note:'Scholarships, applications, forms, offices', hue:270, order:Math.max(0,...courses.map(x=>x.order||0))+1, deliverables:[], tasks:[], v:PLAN_VERSION}; courses.push(c); save(c); }
     ready = true; route();
     if(IN_APP && !window.__ext){ window.__ext = 1; scheduleOrganize(3000); pollJobs(); jobPoll = setInterval(()=>{ if(document.hidden && !REC.recording) return; if(Object.values(JOBS).some(ACTIVE) || REC.recording || RECSTAGE) pollJobs(); }, 4000);
-      APP.call('recover').then(async r=>{ const n = (r.recovered||[]).length; RECSTAGE = ''; if(n){ BRAIN = await APP.call('brainList'); BRAIN_MSG = 'Recovered '+n+' unfinished recording'+(n===1?'':'s')+' after Planner closed.'; UPD = {state:'current', msg:'Recovered '+n+' unfinished recording'+(n===1?'':'s')+'. Open Brain to see '+(n===1?'it':'them')+'.'}; renderUpd(); } render(); }).catch(()=>{}); document.querySelector('nav.tabs a[data-tab="brain"]').hidden = false; refreshExternal(); setInterval(refreshExternal, 300000); setInterval(pushWidget, 600000); setTimeout(()=>window.checkUpdates(false), 8000); setInterval(()=>window.checkUpdates(false), 6*3600*1000); window.addEventListener('focus', refreshExternal); }
+      APP.call('recover').then(async r=>{ const n = (r.recovered||[]).length; RECSTAGE = ''; if(n){ BRAIN = await APP.call('brainList'); BRAIN_MSG = 'Recovered '+n+' unfinished recording'+(n===1?'':'s')+' after Planner closed.'; UPD = {state:'current', msg:'Recovered '+n+' unfinished recording'+(n===1?'':'s')+'. Open Brain to see '+(n===1?'it':'them')+'.'}; renderUpd(); } render(); }).catch(()=>{}); document.querySelector('nav.tabs a[data-tab="brain"]').hidden = false; document.querySelector('nav.tabs a[data-tab="library"]').hidden = false; refreshExternal(); setInterval(refreshExternal, 300000); setInterval(pushWidget, 600000); setTimeout(()=>window.checkUpdates(false), 8000); setInterval(()=>window.checkUpdates(false), 6*3600*1000); window.addEventListener('focus', refreshExternal); }
   }, err=>{ console.error(err); });
   if(PHONE) dbh.collection('textless').onSnapshot(snap=>{ TEXTLESS = new Set(docsOf(snap).map(dataOf).map(x=>x.id)); }, ()=>{});   /* files the Mac cannot make text of (the snapshot) */
   dbh.collection('reads').onSnapshot(snap=>{ READS = {}; docsOf(snap).map(dataOf).forEach(r=>{ READS[r.id] = r; }); }, ()=>{});   /* reading time per PDF (readtime.js) */

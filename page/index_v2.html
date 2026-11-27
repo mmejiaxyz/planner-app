@@ -1621,6 +1621,98 @@ html:not(.phone) header.top nav.tabs{margin-left:auto}
 /* priority deadlines */
 .mx-prio{display:inline-block;font:600 10.5px/1.5 var(--mono);color:var(--bg);background:var(--l7);padding:0 4px;margin-right:6px;vertical-align:1px}
 .mx-prsel select{font-size:13px;border:1px solid var(--g3);background:var(--surface);color:var(--ink);padding:1px 4px}
+
+/* Library (library.js; Figma "M7 Library — shelf first"): index and search on the left, the shelf as a cover flow */
+html:not(.phone) .lb{display:grid;grid-template-columns:250px 1fr;gap:40px;margin-top:22px}
+html:not(.phone) .lb-q{display:flex;align-items:center;gap:8px;border:1px solid var(--g3);padding:0 10px;height:34px;color:var(--ink-3);background:var(--bg)}
+html:not(.phone) .lb-q input{flex:1;border:0;background:transparent;font-size:13px;line-height:1;font-family:inherit;color:var(--ink);outline:0;min-width:0}
+html:not(.phone) .lb-q input::placeholder{color:var(--g5)}
+html:not(.phone) .lb-q:focus-within{border-color:var(--ink)}
+html:not(.phone) .lb-q .mono{font-size:10px;color:var(--g5)}
+html:not(.phone) .lb-ix{margin-top:14px;max-height:calc(100vh - 290px);overflow:auto}
+html:not(.phone) .lb-ch{display:flex;justify-content:space-between;width:100%;padding:7px 0;border:0;border-bottom:1px solid var(--g2);background:none;font-size:14px;line-height:1.3;font-family:inherit;color:var(--ink);text-align:left;cursor:pointer;gap:10px}
+html:not(.phone) .lb-ch>span:first-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+html:not(.phone) .lb-ch .mono{flex:none}
+html:not(.phone) .lb-ch.on{font-weight:600;border-bottom:0}
+html:not(.phone) .lb-ch .mono{font-size:11px;font-weight:400;color:var(--ink-3)}
+html:not(.phone) .lb-cl{padding:2px 0 8px;border-bottom:1px solid var(--g2)}
+html:not(.phone) .lb-row{display:block;width:100%;padding:3px 8px 3px 12px;border:0;background:none;font-size:12.5px;line-height:1.4;font-family:inherit;color:var(--ink-2);text-align:left;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;position:relative}
+html:not(.phone) .lb-row.st{color:var(--ink)}
+html:not(.phone) .lb-row.st::before{content:"";position:absolute;left:0;top:5px;bottom:5px;width:3px;background:var(--l6)}
+html:not(.phone) .lb-row.sel{background:var(--l3);color:var(--ink);font-weight:500}
+html:not(.phone) .lb-row:hover{background:var(--l1)}
+html:not(.phone) .lb-main{min-width:0}
+html:not(.phone) .lb-shelf{position:relative;overflow:hidden}
+html:not(.phone) .lb-shelf::before,html:not(.phone) .lb-shelf::after{content:"";position:absolute;top:0;bottom:44px;width:70px;z-index:2;pointer-events:none}
+html:not(.phone) .lb-shelf::before{left:0;background:linear-gradient(90deg,var(--bg),transparent)}
+html:not(.phone) .lb-shelf::after{right:0;background:linear-gradient(270deg,var(--bg),transparent)}
+html:not(.phone) .lb-sp{position:absolute;top:0;padding:0;border:0;background:var(--l2);cursor:pointer;overflow:hidden;display:flex;justify-content:center;align-items:flex-end}
+html:not(.phone) .lb-sp span{writing-mode:vertical-rl;transform:rotate(180deg);font-family:var(--mono);color:var(--ink);white-space:nowrap;padding:14px 0;max-height:100%;overflow:hidden;text-overflow:ellipsis}
+html:not(.phone) .lb-sp.st{background:var(--l6)}
+html:not(.phone) .lb-sp.done{background:var(--l7)}
+html:not(.phone) .lb-sp.st span,html:not(.phone) .lb-sp.done span{color:var(--bg)}
+html:not(.phone) .lb-sp:hover{outline:2px solid var(--ink);outline-offset:-2px}
+html:not(.phone) .lb-cov{position:absolute;top:0;background:var(--l4);padding:28px 26px;display:flex;flex-direction:column;box-sizing:border-box}
+html:not(.phone) .lb-cov b{font:400 32px/1.15 'Literata',Georgia,serif;color:var(--ink)}
+html:not(.phone) .lb-au{margin-top:8px;font-size:15px;color:var(--ink-2)}
+html:not(.phone) .lb-pg{margin-top:auto}
+html:not(.phone) .lb-pg>i{display:block;height:4px;background:var(--l2);margin-bottom:8px}
+html:not(.phone) .lb-pg>i>i{display:block;height:4px;background:var(--l7)}
+html:not(.phone) .lb-pg .mono{font-size:11px;color:var(--ink-2)}
+html:not(.phone) .lb-bd{position:absolute;height:2px;background:var(--ink)}
+html:not(.phone) .lb-cn{position:absolute;padding:0;border:0;background:none;font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);cursor:pointer;white-space:nowrap}
+html:not(.phone) .lb-cn.on{color:var(--ink)}
+html:not(.phone) .lb-under{display:flex;justify-content:center;align-items:center;gap:56px;margin-top:6px}
+html:not(.phone) .lb-fl{border:0;background:none;font-size:24px;line-height:1;color:var(--ink-2);cursor:pointer;padding:4px 10px}
+html:not(.phone) .lb-read{padding:9px 22px}
+html:not(.phone) .lb-line{text-align:center;font-size:11px;color:var(--ink-3);margin-top:14px}
+
+/* one window: Get help inside the planner chat (help.js helpView, chatwin.js) */
+.pchat .pc-hctx{align-items:flex-start}
+.pchat .pc-hctx b{font-weight:500}
+.pchat .pc-ab{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--l7);margin-right:4px}
+.pchat .pc-hsrc{font-family:var(--mono);font-size:10.5px;color:var(--ink-3);margin-top:3px}
+.pchat .pc-hsrc:empty{display:none}
+.pchat .pc-x{flex:none;background:none;border:0;font-size:18px;line-height:1;color:var(--ink-2);cursor:pointer;padding:0 4px}
+.pchat .pc-x:hover{color:var(--ink)}
+.pchat .pc-ai p{margin:0 0 8px}.pchat .pc-ai p:last-child{margin-bottom:0}
+.pchat .hearly{border-left:2px solid var(--l6);padding-left:10px;font-size:14px}
+.pchat .hdraft{background:var(--bg);border:1px solid var(--rule);padding:8px 10px;margin:6px 0;font-size:14px}
+.pchat .hdrop{border:1px dashed var(--g4);padding:9px 11px;font-size:13.5px;color:var(--ink-2)}
+.pchat .crow{margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.pchat .hsave-in{padding:6px 12px 4px}
+.pchat .hsave-in label{display:block;color:var(--ink-2);font-size:13.5px;margin-bottom:10px}
+.pchat .hsave-in input,.pchat .hsave-in textarea{display:block;width:100%;font:inherit;font-size:15px;color:var(--ink);background:var(--surface);border:1px solid var(--rule);padding:7px 9px;margin-top:4px}
+.pchat .hsave-in label.evchk{display:flex;gap:8px;align-items:center;color:var(--ink)}
+.pchat .hsave-in label.evchk input,.pchat .hsave-in .spent input{width:auto;display:inline-block;margin:0}
+.pchat .pc-row .hmodel{color:var(--ink-3)}.pchat .pc-row .hmodel .on{color:var(--ink);font-weight:600;text-decoration:none}
+.pchat #help-drop.over{background:var(--l1)}
+.pc-at{border:1px solid var(--g3);background:var(--bg);margin-bottom:6px;max-height:220px;overflow:auto}
+.pc-at button{display:flex;justify-content:space-between;gap:10px;width:100%;text-align:left;padding:6px 10px;border:0;border-bottom:1px solid var(--rule);background:none;font-size:13.5px;color:var(--ink);cursor:pointer}
+.pc-at button:last-child{border-bottom:0}
+.pc-at button span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pc-at button .mono{flex:none;font-size:11px;color:var(--ink-3)}
+.pc-at button.on,.pc-at button:hover{background:var(--l2)}
+.pc-at .pc-hsrc{padding:6px 10px}
+
+/* the phone: the selection drawn by the page, and the bubble names what is selected (book.js bkSelPaint) */
+#bk-selpaint{position:fixed;inset:0;pointer-events:none;z-index:4}
+#bk-selpaint i{position:absolute;background:var(--bk-sel);opacity:.55;mix-blend-mode:multiply}
+.bk-dark #bk-selpaint i{mix-blend-mode:screen;opacity:.45}
+.bk .bk-bubble.bk-bq{flex-wrap:wrap}
+.bk .bk-bubble .bk-said{flex-basis:100%;padding:8px 12px 0;font:13px/1.35 var(--serif);color:#E9DFF6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* figures as pictures in the reading version (Reading.addFigures on the Mac) */
+.bk .bk-flow .bk-fig.bk-pic{border:0;padding:.2em 0;text-align:center}
+.bk .bk-flow .bk-fig.bk-pic img{display:block;margin:0 auto;max-width:100%;height:auto;max-height:min(62vh,560px);object-fit:contain;mix-blend-mode:multiply}
+.bk-dark .bk-flow .bk-fig.bk-pic img{mix-blend-mode:normal;filter:brightness(.88)}
+.bk .bk-flow .bk-fig.bk-pic figcaption{text-align:left;font-size:13px}
+.bk .bk-flow .bk-figpg{font-size:11px;color:var(--ink-3);margin-top:4px}
+
+/* shapes read in code (book.js bkShape): epigraphs and their authors, small-caps titles */
+.bk .bk-flow .bk-epi{font-style:italic;color:var(--ink-2);margin:.4em 0 .2em 2.2em;text-indent:0}
+.bk .bk-flow .bk-attr{text-align:right;text-indent:0;font-size:.86em;color:var(--ink-2);margin:0 0 1.1em;letter-spacing:.02em}
+.bk .bk-flow .bk-caps{text-transform:uppercase;letter-spacing:.05em;font-size:calc(var(--bk-size)*.92)}
 </style>
 </head>
 <body>
@@ -1632,6 +1724,7 @@ html:not(.phone) header.top nav.tabs{margin-left:auto}
       <a href="#calendar" data-tab="calendar">Calendar</a>
       <a href="#courses" data-tab="courses">Courses</a>
       <a href="#all-tasks" data-tab="all-tasks">All tasks</a>
+      <a href="#library" data-tab="library" hidden>Library</a>
       <a href="#brain" data-tab="brain" hidden>Brain</a>
     </nav>
     <button class="themebtn" id="themebtn" type="button" aria-label="Switch light or dark"></button>
@@ -1663,6 +1756,7 @@ html:not(.phone) header.top nav.tabs{margin-left:auto}
 <script src="js/usage.js"></script>
 <script src="js/readtime.js"></script>
 <script src="js/hardcover.js"></script>
+<script src="js/library.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>

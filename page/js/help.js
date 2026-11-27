@@ -307,6 +307,7 @@ async function helpSend(prompt, shown, opts={}){
 async function helpTurn(text){
   text = String(text||'').trim(); if(!text || !HELP || HELP.busy) return;
   HELP.draft = '';
+  if(compose.fromHelp===helpKey(HELP.cid, HELP.tid) && !compose.busy && !compose.proposal){ compose = freshCompose(); }
   const named = [...coursesNamed(text)].filter(id=>!(HELP.cids||[]).includes(id));
   let widened = '';
   if(named.length){ HELP.extra = (HELP.extra||[]).concat(named); HELP.reprep = true; widened = named.map(id=>cById(id).short).join(', '); }
@@ -379,9 +380,9 @@ ${courseIndex()}`;
     if(!hasChanges(pr)) throw new Error(pr.summary || 'No changes to the plan came out of this session.');
     compose = freshCompose(); compose.focus = x.gone ? null : {course:c.id, id:x.t.id}; compose.provider = 'claude'; compose.proposal = pr;
     compose.thread = [{role:'user', text:'From the help session on "'+x.t.title+'"'}];
-    HELP.min = true; HELP.note = 'Plan changes are waiting on Today.';
-    renderHelp();
-    chatOpen(true); render();   /* the preview opens in the planner chat window */
+    compose.fromHelp = helpKey(c.id, x.t.id);   /* shown in this task's thread in the one window (helpView) */
+    HELP.note = '';
+    render(); renderHelp();
   }catch(e){ HELP.error = e.message; renderHelp(); }
 }
 async function helpApply(){
@@ -469,7 +470,65 @@ async function helpTermOpen(proj){
   }catch(e){ if(!HELP || !HELP.term) return; HELP.term.msg = e.message; }
   renderHelp();
 }
+/* One window (27 Nov 2026, the user's choice after the Figma mock "M8 One chat": "merge both"). On the Mac, Get help is drawn
+   inside the planner chat window (chatwin.js): the task is attached at the top, × detaches it and the window is the planner
+   again. The engines stay apart: this session reads the task's files and cannot change the plan; Change the plan and a
+   saved result that changes direction go to the planner, whose checklist shows in this same thread (compose.fromHelp). */
 function renderHelp(){
+  if(typeof IN_APP==='undefined' || !IN_APP || (typeof PHONE!=='undefined' && PHONE) || typeof chatRender!=='function') return renderHelpPanel();
+  const old = document.getElementById('help'); if(old) old.remove();
+  if(HELP && !helpTask()) HELP = null;
+  if(HELP && !PCHAT.open){ PCHAT.open = true; lsSet('chatOpen','1'); }
+  const ae = document.activeElement, had = ae && ae.id==='help-text';
+  chatRender();
+  if(HELP && (had || (!HELP.busy && !HELP.save))){ const ta = document.getElementById('help-text'); if(ta && !ta.disabled && document.activeElement!==ta){ ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); } }
+}
+/* the task's session as the inside of the one window: the attached task, the thread, the save form, the input */
+function helpView(){
+  const x = helpTask(); if(!x) return '';
+  const {c,t} = x, key = helpKey(c.id, t.id), mine = compose.fromHelp===key;
+  const n = HELP.counts;
+  let h = '<div class="pc-ctx pc-hctx"><div><span class="pc-ab mono">About</span> <b>'+esc(t.title)+'</b> <span class="muted">· '+esc(c.short)+'</span>'
+    + '<div class="pc-hsrc mono">'+(n ? 'Reads the planner, '+n.files+' file'+(n.files===1?'':'s')+(n.meetings?', '+n.meetings+' meeting'+(n.meetings===1?'':'s'):'')+(n.courses.length>1?' ('+esc(n.courses.join(', '))+')':'') : 'Gathering the sources')+' · cannot change the plan</div>'
+    + '<div class="pc-hsrc mono" id="help-ocr">'+esc(helpOcrLine())+'</div></div>'
+    + '<button class="pc-x" data-hp="close" title="Detach the task (Esc): back to the planner">×</button></div>';
+  h += '<div class="pc-msgs" id="help-thread">';
+  if(HELP.term) h += helpTermBlock(c);
+  if(x.gone) h += '<div class="pc-ai pc-note">This task was changed in the plan. Saving the result still adds it to '+esc(c.short)+'’s decisions.</div>';
+  if(HELP.note) h += '<div class="pc-ai pc-note">'+esc(HELP.note)+'</div>';
+  h += (HELP.earlier||[]).map((e,i)=>'<div class="pc-ai hearly"><div class="plabel">'+esc(e.from?'From “'+e.from+'”':'Earlier session')+' · '+esc(fmtShort(e.d.date))+'</div><b>'+esc(e.d.text)+'</b>'+(e.d.summary?'<div class="muted">'+esc(e.d.summary).replace(/\n/g,'<br>')+'</div>':'')
+    +(e.d.drafts||[]).map((d,j)=>'<details class="fold"><summary>'+esc(d.title)+'</summary><div class="hdraft">'+esc(d.text).replace(/\n/g,'<br>')+'</div><button class="lnk" data-hp="copy" data-ci="'+i+'|'+j+'">Copy</button></details>').join('')+'</div>').join('');
+  if(!HELP.thread.length && !HELP.busy && !HELP.stage && !(HELP.earlier||[]).length) h += '<div class="pc-ai pc-note">Ask about this task. Answers come from its files, your notes and earlier sessions.</div>';
+  h += HELP.thread.map(m=>m.role==='user' ? '<div class="pc-me">'+esc(m.text)+'</div>' : '<div class="pc-ai">'+md(m.text)+'</div>').join('');
+  if(HELP.stage) h += '<div class="pc-ai pc-note">'+esc(HELP.stage)+'…</div>';
+  else if(HELP.busy) h += '<div class="pc-ai" id="help-stream">'+(HELP.stream ? md(hBack(HELP.stream)) : '<span class="muted">'+esc(HELP.tool||'Reading the sources')+'…</span>')+'</div>';
+  else if(HELP.thread.length && !HELP.save && !(mine && (compose.busy || compose.proposal))) h += '<div class="pc-acts"><button class="btn sm" data-hp="sum">Save result</button><button class="btn sm" data-hp="plan" title="Move, change, split or remove this task, or add follow-ups. You tick the changes before anything is saved.">Change the plan</button></div>';
+  if(mine){   /* the planner's answer to Change the plan, in this thread */
+    if(compose.busy) h += '<div id="cmp-prog" class="cprog pc-prog" role="status" aria-live="polite">'+planProgress()+'</div>';
+    if(compose.proposal) h += '<div class="pc-ai pc-note">The planner proposes this. Nothing changes until you apply it.</div>'+proposalBlock(compose.proposal, 'compose');
+    if(compose.error) h += '<div class="pc-warn">'+esc(compose.error)+'</div>';
+    if(compose.done) h += '<div class="pc-done"><span>'+esc(compose.done)+'</span>'+(compose.undo && typeof UNDO!=='undefined' && UNDO ? '<button class="lnk" data-cmp="undo">Undo</button>' : '')+'</div>';
+  }
+  if(HELP.error) h += '<div class="pc-warn">'+esc(HELP.error)+'</div>';
+  if(HELP.save){
+    const s = HELP.save;
+    h += '<div class="pc-card hsave"><div class="pc-ch"><span class="pc-chip">Save to '+esc(c.short)+'</span></div><div class="hsave-in">'
+      + '<label>Decision<input data-hs="decision" value="'+esc(s.decision)+'" placeholder="One line"></label>'
+      + '<label>Summary<textarea data-hs="summary" rows="5">'+esc(s.summary)+'</textarea></label>'
+      + (s.drafts||[]).map(d=>'<div class="pc-hsrc">Keeps the draft “'+esc(d.title)+'”</div>').join('')
+      + (s.changesPlan ? '<div class="pc-hsrc">This changes the plan. After saving, the planner proposes the changes here for you to tick.</div>' : '')
+      + '<label class="evchk"><input type="checkbox" data-hs="done"'+(s.done?' checked':'')+'> Mark the task done</label>'
+      + (s.done && !x.gone?'<label class="spent">Took <input type="number" step="0.25" min="0" data-hs="spent" value="'+esc(s.spent)+'" placeholder="'+esc(t.est||'')+'"> h <span class="faint">empty = no time</span></label>':'')
+      + '</div><div class="pc-foot"><button class="btn pri" data-hp="apply">Save to course</button><button class="lnk" data-hp="unsave">Back to the session</button></div></div>';
+  }
+  h += '</div>';
+  h += '<div class="pc-inp" id="help-drop"><textarea id="help-text" rows="2" placeholder="Ask about this task, or drop files here"'+(HELP.stage||HELP.save?' disabled':'')+'>'+esc(HELP.draft)+'</textarea>'
+    + '<div class="pc-row"><button class="lnk" data-hp="pick">Add files…</button>'+(HELP.folder?'<button class="lnk" data-hp="term" title="Work in Terminal with Claude Code in this course’s folder or one of its projects. It continues the last conversation there.">Terminal</button>':'')
+    + '<span class="hmodel"><button class="lnk'+(HELP.model!=='sonnet'?' on':'')+'" data-hp="haiku" title="Fast and cheap, the default">Haiku</button> · <button class="lnk'+(HELP.model==='sonnet'?' on':'')+'" data-hp="sonnet" title="For hard work such as research. Remembered for this course.">Sonnet</button>'+(HELP.usage?'<span class="htok">'+(HELP.usage.tokens>=1000?Math.round(HELP.usage.tokens/1000)+'k':HELP.usage.tokens)+' · $'+HELP.usage.cost.toFixed(2)+'</span>':'')+'</span>'
+    + '<span class="mono faint">⌘↩</span><button class="btn pri" data-hp="send"'+(HELP.busy||HELP.save?' disabled':'')+'>'+(HELP.busy?'Thinking…':'Send')+'</button></div></div>';
+  return h;
+}
+function renderHelpPanel(){
   let host = document.getElementById('help');
   if(!HELP){ if(host) host.remove(); return; }
   const x = helpTask(); if(!x){ HELP = null; if(host) host.remove(); return; }
@@ -516,7 +575,7 @@ function renderHelp(){
 document.addEventListener('click', e=>{
   const hb = e.target.closest('[data-help]');
   if(hb){ e.preventDefault(); e.stopPropagation(); const [cid,tid] = hb.dataset.help.split('|'); openHelpPhone(cid, tid); return; }
-  const b = e.target.closest('#help [data-hp]'); if(!b || !HELP) return;
+  const b = e.target.closest('#help [data-hp], #pchat [data-hp]'); if(!b || !HELP) return;
   const a = b.dataset.hp;
   if(a==='close'){ if(HELP.busy && !confirm('Claude is still answering. Close anyway?')) return; HELP = null; renderHelp(); }
   else if(a==='send'){ const ta = document.getElementById('help-text'); helpTurn(ta && ta.value).then(()=>{}); }
@@ -542,7 +601,7 @@ document.addEventListener('change', e=>{ const el = e.target; if(HELP && HELP.sa
 document.addEventListener('keydown', e=>{
   if(!HELP) return;
   if(e.target.id==='help-text' && e.key==='Enter' && (e.metaKey||e.ctrlKey)){ e.preventDefault(); helpTurn(e.target.value); }
-  else if(e.key==='Escape' && !HELP.busy && !HELP.save && !HELP.min && document.getElementById('help')){ HELP = null; renderHelp(); }
+  else if(e.key==='Escape' && !HELP.busy && !HELP.save && !HELP.min && (document.getElementById('help') || document.querySelector('#pchat .pc-hctx'))){ e.preventDefault(); HELP = null; renderHelp(); }
 });
 /* A file dropped on the window would replace the page; only the help drop area takes drops. */
 document.addEventListener('dragover', e=>{ e.preventDefault(); const z = document.getElementById('help-drop'); if(z) z.classList.toggle('over', !!e.target.closest('#help-drop')); });

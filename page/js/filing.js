@@ -39,7 +39,7 @@ async function filesDropped(ev){
   flCue(false);
   const at = document.elementFromPoint(ev.x, ev.y), files = (ev.items||[]).filter(i=>!i.dir);
   if(!files.length){ if((ev.items||[]).length) flToast('Folders cannot be filed yet, only files.'); return; }
-  if(HELP && at && at.closest('#help-drop')) return helpAddContext('paths', files.map(f=>f.path));
+  if(HELP && at && at.closest('#help-drop, #pchat.pc-help')) return helpAddContext('paths', files.map(f=>f.path));
   /* dropped on the planner chat: set up a course from them (onboard.js) */
   if(typeof chatDrop==='function' && IN_APP && at && at.closest('.compose')) return chatDrop(files.map(f=>f.path));
   const items = files.map(f=>{ const name = f.path.split('/').pop(); return {src:f.path, from:f.path.split('/').slice(0,-1).join('/'), name:flBase(name), ext:flExt(name), cid:flGuess(name), sub:''}; });
@@ -110,8 +110,8 @@ function flRender(){
 function flToast(text){ let t = document.getElementById('fltoast'); if(!t){ t = document.createElement('div'); t.id = 'fltoast'; t.className = 'fltoast'; document.body.appendChild(t); } t.textContent = text; clearTimeout(flToast.t); flToast.t = setTimeout(()=>t.remove(), 4000); }
 /* While files are dragged over the window, a cue says what a drop does. */
 function flCue(on){ let c = document.getElementById('dropcue'); if(!on){ if(c) c.remove(); return; } if(!c){ c = document.createElement('div'); c.id = 'dropcue'; c.className = 'dropcue'; c.innerHTML = '<span>Drop to file it in a course</span>'; document.body.appendChild(c); } }
-document.addEventListener('dragenter', e=>{ if(IN_APP && e.dataTransfer && [...(e.dataTransfer.types||[])].includes('Files')) flCue(!e.target.closest('#help-drop')); });
-document.addEventListener('dragover', e=>{ if(document.getElementById('dropcue') && e.target.closest('#help-drop')) flCue(false); });
+document.addEventListener('dragenter', e=>{ if(IN_APP && e.dataTransfer && [...(e.dataTransfer.types||[])].includes('Files')) flCue(!e.target.closest('#help-drop, #pchat.pc-help')); });
+document.addEventListener('dragover', e=>{ if(document.getElementById('dropcue') && e.target.closest('#help-drop, #pchat.pc-help')) flCue(false); });
 document.addEventListener('dragleave', e=>{ if(!e.relatedTarget) flCue(false); });
 document.addEventListener('drop', ()=>flCue(false));
 document.addEventListener('click', async e=>{

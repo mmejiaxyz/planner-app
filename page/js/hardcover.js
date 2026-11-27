@@ -35,11 +35,11 @@ function hcIsbn(){
 }
 const hcDoc = () => { if(!READ || typeof rtKey!=='function') return null; const k = rtKey(), id = rtId(k); return READS[id] = READS[id] || {id, cid:k.split('|')[0], file:k.split('|').slice(1).join('|'), title:READ.title||'', sessions:[]}; };
 
-/* links the open PDF to a Hardcover book: Currently reading, a read from today at this page */
+/* links the open PDF to a Hardcover book: Currently reading, a read from today; an open read keeps its pages (never sent lower) */
 async function hcLink(bookId, editionId, title, pages){
   const doc = hcDoc(); if(!doc) return;
   const me = await hcMe();
-  const ub = (await hcCall('query ($id: Int!, $u: Int!) { user_books(where: {book_id: {_eq: $id}, user_id: {_eq: $u}}) { id status_id user_book_reads(order_by: {id: asc}) { id finished_at } } }', {id:bookId, u:me.id})).user_books || [];
+  const ub = (await hcCall('query ($id: Int!, $u: Int!) { user_books(where: {book_id: {_eq: $id}, user_id: {_eq: $u}}) { id status_id user_book_reads(order_by: {id: asc}) { id finished_at progress_pages } } }', {id:bookId, u:me.id})).user_books || [];
   let u = ub[0];
   if(!u){
     const r = await hcCall('mutation ($o: UserBookCreateInput!) { insert_user_book(object: $o) { error user_book { id status_id } } }',
@@ -56,7 +56,7 @@ async function hcLink(bookId, editionId, title, pages){
       {id:u.id, p:null, e:editionId || null, s:TODAY});
     read = r.insert_user_book_read && r.insert_user_book_read.user_book_read;
   }
-  doc.hc = {book:bookId, edition:editionId||null, title:title||'', pages:pages||0, ub:u.id, read:read ? read.id : null, sent:0, status:u.status_id===3 ? 3 : 2, tried:true};
+  doc.hc = {book:bookId, edition:editionId||null, title:title||'', pages:pages||0, ub:u.id, read:read ? read.id : null, sent:(read && read.progress_pages) || 0, status:u.status_id===3 ? 3 : 2, tried:true};
   rtSave(doc); await hcProgress(doc);
 }
 /* once per PDF: an ISBN links it by itself */

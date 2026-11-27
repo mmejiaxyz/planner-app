@@ -46,7 +46,9 @@ const BK_ICON = {
   down: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 9l6 6 6-6"/></svg>'
 };
 /* Themes & Settings (the user's reference: Apple Books, 25 Nov 2026), in the P15 shades with square edges.
-   Each theme: page colours and its own font; a font he picks in Customize wins. Dark themes use the dark shades. */
+   A theme is page colours only (27 Nov 2026, the user's words: "too many reading modes, I dont want the font to change or the
+   sizing, just the colors"): the font is Literata unless another is picked in Customize on the Mac; Bold and Focus, which only
+   changed the font, are gone (a kept choice of them falls back to Original). On the phone the Aa menu has only the colours. */
 const BK_FONTS = {
   literata:['Literata', "'Literata','Iowan Old Style',Georgia,serif"], charter:['Charter', "Charter,'Bitstream Charter',Georgia,serif"],
   iowan:['Iowan Old Style', "'Iowan Old Style',Georgia,serif"], newyork:['New York', "ui-serif,'New York',Georgia,serif"],
@@ -55,10 +57,8 @@ const BK_FONTS = {
 const BK_THEMES = {
   original:{name:'Original', bg:'#FDFCF8', ink:'#1A1A1A', font:'literata'},
   quiet:   {name:'Quiet',    bg:'#3F3F3C', ink:'#C9C8C3', font:'literata', dark:true},
-  paper:   {name:'Paper',    bg:'#F1F0EB', ink:'#1A1A1A', font:'charter'},
-  bold:    {name:'Bold',     bg:'#FDFCF8', ink:'#1A1A1A', font:'inter', bold:true},
-  calm:    {name:'Calm',     bg:'#F4EFFA', ink:'#3F3F3C', font:'iowan'},
-  focus:   {name:'Focus',    bg:'#FAF8F2', ink:'#1A1A1A', font:'inter'}
+  paper:   {name:'Paper',    bg:'#F1F0EB', ink:'#1A1A1A', font:'literata'},
+  calm:    {name:'Calm',     bg:'#F4EFFA', ink:'#3F3F3C', font:'literata'}
 };
 const BK_DEF = {size:PHONE ? 19 : 20, theme:'original', auto:true, font:'', bold:false, custom:false, lh:1.6, ls:0, ws:0, mg:0, cols:'auto', justify:false};
 function bkPref(){
@@ -84,16 +84,56 @@ async function bkOpen(){
   if(READ.book){ await bkMarks(); bkMode('text'); }
   else { READ.autoText = true; bkMode('page'); }
 }
+/* How blocks look, read from the text in code (27 Nov 2026, the user's report: "some formating its confusing").
+   The text itself is never changed, so marks keep their places.
+   - An epigraph's author ("-Seneca", "— A. Author": short, after a dash, near a heading or the start) is not a section heading: it is set small and to
+     the right (attr), and the passage before it is set as an epigraph (epi).
+   - A small-caps title the PDF gave with odd casing ("FIRsT PaRT", "ShORt lIfe") is shown in capitals (caps). */
+const BK_ATTR = /^\s*[-–—]\s?[A-ZÀ-Þ][^.!?]{1,70}$/;
+const BK_ODDCASE = /[a-z]I|[A-Z]i[A-Z]|\b[A-Z][a-z]?I[a-z]/;
+function bkShape(blocks, notes){
+  bkMarkers(blocks, notes);
+  blocks.forEach((b,i)=>{
+    const nearHead = i < 15 || [1,2,3].some(k=>blocks[i-k] && (blocks[i-k].k==='h' || blocks[i-k].k==='chap'));   /* epigraphs open a book or a chapter; a dash elsewhere is dialogue */
+    if((b.k==='h' || b.k==='p' || b.k==='q') && nearHead && BK_ATTR.test(b.t)){ b.attr = true; const pv = blocks[i-1]; if(pv && (pv.k==='p' || pv.k==='q') && pv.t.length < 900) pv.epi = true; }
+    if((b.k==='h' || b.k==='chap') && BK_ODDCASE.test(b.t)) b.caps = true;
+  });
+}
+/* Footnote markers the converter left as plain digits ("copyleft 1 testosterone users", 27 Nov 2026): a number (or *) right
+   after a word or punctuation that matches a note printed on the same page becomes that note's marker, once per note. Offsets
+   stay: the characters are only wrapped. Blocks that already have markers are left alone. */
+function bkMarkers(blocks, notes){
+  if(!notes.length) return;
+  const byPg = {}; notes.forEach((n,i)=>{ if(n && n.m) (byPg[n.pg] = byPg[n.pg] || []).push(i); });
+  const used = new Set(blocks.flatMap(b=>(b.fn||[]).map(f=>f[2])));
+  const rx = m => new RegExp('(?<=[A-Za-zÀ-ɏ.,;:!?’”"\\)\\]])\\s?('+m.replace(/[*.?+^$()[\]{}|\\]/g,'\\$&')+')(?=[\\s.,;:!?)’”]|$)');
+  for(const b of blocks){
+    if(b.k==='fig' || (b.fn && b.fn.length) || !b.t) continue;
+    const pgs = [...new Set((b.r||[]).map(r=>r.pg))];
+    const cand = pgs.flatMap(p=>byPg[p]||[]).filter(i=>!used.has(i));
+    if(!cand.length) continue;
+    const fn = [];
+    for(const i of cand){
+      const m = String(notes[i].m).trim(); if(!/^(\d{1,3}|\*{1,3}|†|‡)$/.test(m)) continue;
+      const hit = rx(m).exec(b.t); if(!hit) continue;
+      const o = hit.index + hit[0].length - hit[1].length;
+      if(fn.some(f=>o < f[0]+f[1] && f[0] < o+hit[1].length)) continue;
+      fn.push([o, hit[1].length, i]); used.add(i);
+    }
+    if(fn.length) b.fn = fn.sort((x,y)=>x[0]-y[0]);
+  }
+}
 function bkLoad(text){
   const d = JSON.parse(text);
   d.byPage = {};
   d.blocks.forEach((b,i)=>{
-    b.i = i; b.t = b.t || '';
+    b.i = i; b.t = (b.t || '').replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '\u200b');   /* stray control characters from the PDF: same length, so marks keep their places */
     b.L = [];
     (b.r||[]).forEach(r=>{ (r.ln||[]).forEach(l=>b.L.push({o:l[0], x0:l[1], y0:l[2], x1:l[3], y1:l[4], pg:r.pg})); (d.byPage[r.pg] = d.byPage[r.pg] || []).push(i); });
     b.L.sort((a,c)=>a.o-c.o);
   });
   Object.keys(d.byPage).forEach(k=>{ d.byPage[k] = [...new Set(d.byPage[k])]; });
+  bkShape(d.blocks, d.notes||[]);
   READ.book = d; READ.bkState = null;
   READ.hl = READ.hl || []; READ.topics = READ.topics || [];
 }
@@ -190,7 +230,8 @@ function bkSkeleton(host){
 function bkApplyPref(){
   const host = document.getElementById('reader'); if(!host) return;
   const p = bkPref(), t = BK_THEMES[p.theme], night = p.auto && bkNight() && !t.dark;
-  const font = BK_FONTS[p.font] || BK_FONTS[t.font];
+  const font = (!PHONE && BK_FONTS[p.font]) || BK_FONTS.literata;   /* themes never change the font; the phone has one look */
+  if(PHONE){ p.size = BK_DEF.size; p.custom = false; p.justify = false; p.bold = false; p.boldSet = true; }
   host.style.setProperty('--bk-size', p.size+'px');
   host.style.setProperty('--bk-font', font[1]);
   host.style.setProperty('--bk-weight', bkBoldOn(p) ? '600' : '400');
@@ -306,7 +347,11 @@ function bkRanges(bi){
 function bkBlockHTML(b){
   if(b.k==='fig'){
     const pg = b.r && b.r[0] ? b.r[0].pg : 1;
-    return '<figure class="bk-fig" data-b="'+b.i+'">'+(PHONE && !READ.docOpen ? '<span class="faint">Figure on p. '+esc(bkLabel(pg))+' · on the Mac</span>' : '<button class="lnk" data-bk="orig" data-pg="'+pg+'">Figure on p. '+esc(bkLabel(pg))+' · show the original page</button>')+(b.t ? '<figcaption>'+esc(b.t)+'</figcaption>' : '')+'</figure>';
+    /* the picture the Mac cut from the page (Reading.addFigures), else a line that points to the original page */
+    const ln = b.r && b.r[0] && b.r[0].ln && b.r[0].ln[0], fw = ln ? Math.round(ln[3]-ln[1]) : 0, fh = ln ? Math.round(ln[4]-ln[2]) : 0;   /* its size before it decodes, so pages do not shift */
+    if(b.img) return '<figure class="bk-fig bk-pic" data-b="'+b.i+'"><img src="data:image/jpeg;base64,'+b.img+'"'+(fw>0&&fh>0?' width="'+fw+'" height="'+fh+'"':'')+' alt="Figure on p. '+esc(bkLabel(pg))+'" draggable="false">'
+      + (b.t ? '<figcaption>'+esc(b.t)+'</figcaption>' : '')+(PHONE && !READ.docOpen ? '' : '<button class="lnk bk-figpg" data-bk="orig" data-pg="'+pg+'">p. '+esc(bkLabel(pg))+' · original page</button>')+'</figure>';
+    return '<figure class="bk-fig" data-b="'+b.i+'">'+(PHONE && !READ.docOpen ? '<span class="faint">Figure on p. '+esc(bkLabel(pg))+' · its picture comes with the next text from the Mac</span>' : '<button class="lnk" data-bk="orig" data-pg="'+pg+'">Figure on p. '+esc(bkLabel(pg))+' · show the original page</button>')+(b.t ? '<figcaption>'+esc(b.t)+'</figcaption>' : '')+'</figure>';
   }
   const t = b.t, rs = bkRanges(b.i), fn = b.fn || [];
   const cuts = new Set([0, t.length]);
@@ -323,8 +368,10 @@ function bkBlockHTML(b){
     h += piece;
   }
   const lower = /^[a-zà-ÿ“"‘'(…\[]/.test(t);
-  if(b.k==='chap') return '<div class="bk-chap" data-b="'+b.i+'">'+h+'</div>';
-  if(b.k==='h') return '<h3 class="bk-h" data-b="'+b.i+'">'+h+'</h3>';
+  if(b.attr) return '<p class="bk-attr" data-b="'+b.i+'">'+h+'</p>';
+  if(b.epi) return '<blockquote class="bk-q bk-epi" data-b="'+b.i+'">'+h+'</blockquote>';
+  if(b.k==='chap') return '<div class="bk-chap'+(b.caps?' bk-caps':'')+'" data-b="'+b.i+'">'+h+'</div>';
+  if(b.k==='h') return '<h3 class="bk-h'+(b.caps?' bk-caps':'')+'" data-b="'+b.i+'">'+h+'</h3>';
   if(b.k==='q') return '<blockquote class="bk-q" data-b="'+b.i+'">'+h+'</blockquote>';
   if(b.k==='li') return '<p class="bk-li" data-b="'+b.i+'">'+h+'</p>';
   return '<p class="bk-p'+(lower ? ' cont' : '')+'" data-b="'+b.i+'">'+h+'</p>';
@@ -473,13 +520,15 @@ function bkPops(){
   let h = '';
   const W = window.innerWidth, Hh = window.innerHeight;
   if(READ.bsel && READ.mode==='text' && !READ.define){
-    const r = READ.bsel.rect, bw = PHONE ? 336 : 416, bh = 64;
+    const r = READ.bsel.rect, bw = PHONE ? 336 : 416, bh = PHONE ? 96 : 64;
     let x = Math.round(r.left + r.width/2 - bw/2), y = Math.round(r.top - bh - 12), below = false;
     if(y < 56){ y = Math.round(READ.bsel.last.bottom + 12); below = true; }
     x = Math.max(12, Math.min(x, W - bw - 12 - (READ.panel ? BK_PANEL : 0)));
     const tail = Math.max(14, Math.min(bw-14, Math.round(r.left + r.width/2 - x)));
     const m = READ.bsel.mark;
-    h += '<div class="bk-bubble'+(below?' below':'')+'" style="left:'+x+'px;top:'+y+'px;--tail:'+tail+'px" role="toolbar" aria-label="Selection">'
+    const said = PHONE ? String(READ.bsel.text||'').replace(/\s+/g,' ').trim() : '';
+    h += '<div class="bk-bubble'+(below?' below':'')+(said?' bk-bq':'')+'" style="left:'+x+'px;top:'+y+'px;--tail:'+tail+'px" role="toolbar" aria-label="Selection">'
+      + (said ? '<div class="bk-said">“'+esc(said.length > 70 ? said.slice(0,34)+' … '+said.slice(-30) : said)+'”</div>' : '')
       + '<button data-bk="explain">'+BK_ICON.explain+'<span>Explain</span><i>E</i></button>'
       + '<button data-bk="define">'+BK_ICON.define+'<span>Define</span><i>D</i></button>'
       + '<button data-bk="note"'+(m && m.kind==='note' && m.text ? ' title="'+esc(m.text)+'"' : '')+'>'+BK_ICON.note+'<span>'+(m && m.kind==='note' ? 'Your note' : 'Note')+'</span><i>N</i></button>'
@@ -499,7 +548,7 @@ function bkPops(){
   if(READ.fnote!=null && READ.book){
     const n = READ.book.notes[READ.fnote], cw = 420;
     if(n){ const x = Math.max(12, Math.min(Math.round(READ.fnoteAt.x), W - cw - 12)), y = Math.round(READ.fnoteAt.y + 8);
-      h += '<div class="bk-define bk-fnote" style="left:'+x+'px;top:'+Math.min(y, Hh-240)+'px" role="dialog" aria-label="Footnote"><div class="bk-dh"><b>Note '+esc(n.m||'')+'</b><span class="faint mono">p. '+esc(bkLabel(n.pg))+'</span></div><div class="bk-dd">'+esc(n.t)+'</div></div>'; }
+      h += '<div class="bk-define bk-fnote" style="left:'+x+'px;top:'+Math.min(y, Hh-240)+'px" role="dialog" aria-label="Footnote"><div class="bk-dh"><b>Note '+esc(n.m||'')+'</b><span class="faint mono">p. '+esc(bkLabel(n.pg))+'</span></div><div class="bk-dd">'+esc(String(n.t||'').replace(/^\s*[.)]\s*/, ''))+'</div></div>'; }
   }
   if(READ.pop==='menu') h += bkMenuHTML();
   if(READ.pop==='aa') h += READ.aaView==='custom' ? bkCustomHTML() : bkThemesHTML();
@@ -517,11 +566,11 @@ const BK_GEAR = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" str
 function bkThemesHTML(){
   const p = bkPref();
   return '<div class="bk-menu bk-aapop" role="dialog" aria-label="Themes and settings"><div class="bk-aah">Themes &amp; Settings</div>'
-    + '<div class="bk-aarow"><div class="bk-seg"><button data-bk="smaller" aria-label="Smaller text" title="Smaller ('+p.size+')"><span style="font-size:14px">A</span></button><button data-bk="bigger" aria-label="Bigger text" title="Bigger ('+p.size+')"><span style="font-size:21px">A</span></button></div>'
-    + '<button class="bk-sun'+(p.auto?' on':'')+'" data-bk="autodark" role="switch" aria-checked="'+p.auto+'" title="Dark when the Mac is dark">'+BK_SUN+'</button></div>'
-    + '<div class="bk-tiles">'+Object.keys(BK_THEMES).map(k=>{ const t = BK_THEMES[k], f = BK_FONTS[t.font][1];
-        return '<button class="bk-tile'+(p.theme===k?' on':'')+'" data-bk="theme" data-v="'+k+'" style="background:'+t.bg+';color:'+t.ink+'" aria-pressed="'+(p.theme===k)+'"><span class="aa" style="font-family:'+esc(f)+';font-weight:'+(t.bold?700:400)+'">Aa</span><span style="font-family:'+esc(f)+';font-weight:'+(t.bold?700:400)+'">'+t.name+'</span></button>'; }).join('')+'</div>'
-    + '<button class="bk-cust" data-bk="custom">'+BK_GEAR+'<span>Customize</span></button></div>';
+    + (PHONE ? '<div class="bk-aarow">' : '<div class="bk-aarow"><div class="bk-seg"><button data-bk="smaller" aria-label="Smaller text" title="Smaller ('+p.size+')"><span style="font-size:14px">A</span></button><button data-bk="bigger" aria-label="Bigger text" title="Bigger ('+p.size+')"><span style="font-size:21px">A</span></button></div>')
+    + '<button class="bk-sun'+(p.auto?' on':'')+'" data-bk="autodark" role="switch" aria-checked="'+p.auto+'" title="Dark when the '+(PHONE?'iPhone':'Mac')+' is dark">'+BK_SUN+'</button></div>'
+    + '<div class="bk-tiles">'+Object.keys(BK_THEMES).map(k=>{ const t = BK_THEMES[k], f = BK_FONTS.literata[1];
+        return '<button class="bk-tile'+(p.theme===k?' on':'')+'" data-bk="theme" data-v="'+k+'" style="background:'+t.bg+';color:'+t.ink+'" aria-pressed="'+(p.theme===k)+'"><span class="aa" style="font-family:'+esc(f)+'">Aa</span><span style="font-family:'+esc(f)+'">'+t.name+'</span></button>'; }).join('')+'</div>'
+    + (PHONE ? '' : '<button class="bk-cust" data-bk="custom">'+BK_GEAR+'<span>Customize</span></button>')+'</div>';
 }
 function bkCustomHTML(){
   const p = bkPref(), t = BK_THEMES[p.theme];
@@ -529,7 +578,7 @@ function bkCustomHTML(){
   const sl = (k, label, min, max, step, val, show) => '<div class="bk-sl"><div class="bk-sll mono">'+label+'</div><div class="bk-slr"><input type="range" data-bkp="'+k+'" min="'+min+'" max="'+max+'" step="'+step+'" value="'+val+'"'+(p.custom?'':' disabled')+' aria-label="'+label+'"><span class="mono">'+show+'</span></div></div>';
   return '<div class="bk-menu bk-aapop bk-custom" role="dialog" aria-label="Customize theme"><div class="bk-aah"><button class="bk-ib" data-bk="aaback" aria-label="Back">'+BK_ICON.back+'</button><span>Customize Theme</span><span style="width:34px"></span></div>'
     + '<div class="bk-sec mono">TEXT</div><div class="bk-box">'
-    + '<div class="bk-cr"><span>Font</span><select data-bkp="font"><option value="">'+esc(BK_FONTS[t.font][0])+' (theme)</option>'+Object.keys(BK_FONTS).map(k=>'<option value="'+k+'"'+(p.font===k?' selected':'')+'>'+esc(BK_FONTS[k][0])+'</option>').join('')+'</select></div>'
+    + '<div class="bk-cr"><span>Font</span><select data-bkp="font"><option value="">'+esc(BK_FONTS.literata[0])+' (default)</option>'+Object.keys(BK_FONTS).map(k=>'<option value="'+k+'"'+(p.font===k?' selected':'')+'>'+esc(BK_FONTS[k][0])+'</option>').join('')+'</select></div>'
     + sw('bold', bkBoldOn(p), 'Bold text')+'</div>'
     + '<div class="bk-sec mono">LAYOUT</div><div class="bk-box">'+sw('custom', p.custom, 'Customize')
     + sl('lh', 'LINE SPACING', 1.2, 2.2, 0.05, p.lh, (+p.lh).toFixed(2))
@@ -1034,8 +1083,19 @@ document.addEventListener('keyup', e=>{ if(READ && !PHONE && READ.mode==='text' 
 let bkSelT = null;
 document.addEventListener('selectionchange', ()=>{
   if(!PHONE || !READ || READ.mode!=='text' || !READ.book) return;
+  bkSelPaint();
   clearTimeout(bkSelT); bkSelT = setTimeout(bkSelEnd, 550);
 });
+/* The phone's own selection does not show over the paged text (27 Nov 2026, the user's report: "does not shows the finger selection
+   and its hard to know what one is highlightning"): the selected lines are drawn here in lilac while the finger moves. */
+function bkSelPaint(){
+  let host = document.getElementById('bk-selpaint');
+  const s = window.getSelection(), on = s && !s.isCollapsed && s.rangeCount && READ && READ.mode==='text';
+  if(!on){ if(host) host.innerHTML = ''; return; }
+  if(!host){ const v = document.getElementById('reader'); if(!v) return; host = document.createElement('div'); host.id = 'bk-selpaint'; host.setAttribute('aria-hidden','true'); v.appendChild(host); }
+  const rs = [...s.getRangeAt(0).getClientRects()].filter(r=>r.width > 1 && r.height > 1).slice(0, 400);
+  host.innerHTML = rs.map(r=>'<i style="left:'+r.left+'px;top:'+r.top+'px;width:'+r.width+'px;height:'+r.height+'px"></i>').join('');
+}
 /* Pages as in Habla: a tap on the right 28 % or a swipe left turns forward, the left 28 % or a swipe right back, the
    middle shows or hides the bars. A tap while something is selected or open only closes it. */
 let bkTouch = null;

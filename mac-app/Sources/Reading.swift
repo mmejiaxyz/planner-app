@@ -1,4 +1,6 @@
 import Foundation
+import AppKit
+import PDFKit
 
 /// Reading versions of PDFs for the book-style reader (reader redesign, 25 Nov 2026).
 /// The text is made by `reading/convert.py` with Docling (MIT, open source; installed with `uv tool install "docling[ocrmac]"`),
@@ -88,6 +90,7 @@ final class Reading {
 
     /// Course PDFs to make ahead of time, most wanted first (the page sends files linked to open tasks first).
     func ahead(_ paths: [String]) -> [String: Any] {
+        figuresAll()
         guard Reading.python != nil, Reading.script != nil else { return ["state": "missing"] }
         var added = 0
         for p in paths where p.lowercased().hasSuffix(".pdf") && Help.inDocs(p) != nil && FileManager.default.fileExists(atPath: p) {
@@ -97,6 +100,69 @@ final class Reading {
         }
         pump()
         return ["queued": queue.count, "added": added, "working": working?.path ?? ""]
+    }
+
+    /// Figures as pictures (27 Nov 2026, the user's report: "no images appear unless asked for the mac"). Each figure block of a reading
+    /// version gets `img`, a JPEG of that part of the page (base64), cut from the page as it is shown (rotation included), at most
+    /// 900 px wide. Small marks (under 2 % of the page or 60 pt a side: logos, rules) are left out. Done once per version (meta
+    /// `figs`), in the background; the new file date sends the text to the phone again (PhoneSync mirrorReading).
+    private var figsStarted = false
+    private var figsBusy = Set<String>()
+    nonisolated static let figQueue = DispatchQueue(label: "planner.reading.figs", qos: .utility)
+    func figures(_ path: String) {
+        guard ready(path), (readMeta(path)?["figs"] as? Int) != 1, !figsBusy.contains(path) else { return }
+        figsBusy.insert(path)
+        let j = json(path), m = meta(path)
+        Reading.figQueue.async {
+            Reading.addFigures(pdf: path, json: j, meta: m)
+            DispatchQueue.main.async { Reading.shared.figsBusy.remove(path) }
+        }
+    }
+    /// every stored reading version without its figures yet, one after another in the background
+    func figuresAll() {
+        guard !figsStarted else { return }; figsStarted = true
+        let metas = ((try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []).filter { $0.lastPathComponent.hasSuffix(".meta.json") }
+        for u in metas {
+            guard let d = try? Data(contentsOf: u), let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any], let path = o["path"] as? String else { continue }
+            if (o["figs"] as? Int) != 1, FileManager.default.fileExists(atPath: path) { figures(path) }
+        }
+    }
+    nonisolated static func addFigures(pdf: String, json: URL, meta: URL) {
+        guard let raw = try? Data(contentsOf: json), var obj = try? JSONSerialization.jsonObject(with: raw) as? [String: Any],
+              var blocks = obj["blocks"] as? [[String: Any]], let sizes = obj["sizes"] as? [[Double]],
+              let doc = PDFDocument(url: URL(fileURLWithPath: pdf)) else { return }
+        var thumbs: [Int: CGImage] = [:]
+        var added = 0
+        for i in blocks.indices where (blocks[i]["k"] as? String) == "fig" && blocks[i]["img"] == nil {
+            guard let r = (blocks[i]["r"] as? [[String: Any]])?.first, let pg = r["pg"] as? Int, let ln = (r["ln"] as? [[Double]])?.first, ln.count >= 5,
+                  pg >= 1, pg <= sizes.count, sizes[pg-1].count >= 2, let page = doc.page(at: pg - 1) else { continue }
+            let W = sizes[pg-1][0], H = sizes[pg-1][1], l = ln[1], t = ln[2], rr = ln[3], b = ln[4]
+            let w = rr - l, h = b - t
+            guard W > 0, H > 0, w >= 60, h >= 60, w * h >= 0.02 * W * H else { continue }
+            let scale = min(2.0, 900.0 / w)
+            let full: CGImage
+            if let c = thumbs[pg] { full = c }
+            else {
+                let img = page.thumbnail(of: NSSize(width: W * scale, height: H * scale), for: .cropBox)
+                guard let c = img.cgImage(forProposedRect: nil, context: nil, hints: nil) else { continue }
+                thumbs = [pg: c]; full = c
+            }
+            let fx = Double(full.width) / W, fy = Double(full.height) / H
+            let rect = CGRect(x: l * fx, y: t * fy, width: w * fx, height: h * fy).integral.intersection(CGRect(x: 0, y: 0, width: full.width, height: full.height))
+            guard rect.width > 8, rect.height > 8, let cut = full.cropping(to: rect) else { continue }
+            let rep = NSBitmapImageRep(cgImage: cut)
+            guard let jpg = rep.representation(using: .jpeg, properties: [.compressionFactor: 0.62]) else { continue }
+            blocks[i]["img"] = jpg.base64EncodedString(); added += 1
+        }
+        if added > 0 {
+            obj["blocks"] = blocks
+            guard let out = try? JSONSerialization.data(withJSONObject: obj) else { return }
+            try? out.write(to: json, options: .atomic)
+        }
+        if let md = try? Data(contentsOf: meta), var m = try? JSONSerialization.jsonObject(with: md) as? [String: Any] {
+            m["figs"] = 1
+            if let d = try? JSONSerialization.data(withJSONObject: m) { try? d.write(to: meta, options: .atomic) }
+        }
     }
 
     /// The app wrote marks into a PDF: same text, new size and date. Keeps a reading version that matched the file before.
@@ -161,6 +227,7 @@ final class Reading {
                 m["s"] = w.stamp["s"]; m["m"] = w.stamp["m"]
                 if let md = try? JSONSerialization.data(withJSONObject: m) { try? md.write(to: meta(file), options: .atomic) }
                 working = nil
+                figures(file)
                 bridge?.event(["type": "readerReading", "path": file, "ready": ready(file)])
                 onDone?(file, ready(file))
             } else {
