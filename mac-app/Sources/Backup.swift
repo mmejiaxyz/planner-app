@@ -86,6 +86,7 @@ final class CloudBackup {
         guard let plain = try? JSONSerialization.data(withJSONObject: files, options: [.sortedKeys]) else { return }
         let hash = SHA256.hash(data: plain).map { String(format: "%02x", $0) }.joined()
         if hash == lastHash && !force { return }
+        Activity.shared.start("backup", "send", "Backing up to Cloudflare")
         do {
             let sealed = try SyncCore.seal(["v": 1, "at": ISO8601DateFormatter().string(from: Date()), "files": files], kind: .backup, key: key)
             guard sealed.count <= Self.maxBackup else { throw SyncCore.Failure(message: "The backup is over 200 MB (\(sealed.count >> 20) MB); nothing was replaced.") }
@@ -97,7 +98,8 @@ final class CloudBackup {
             }
             try await server.commitBackup(gen: gen, chunks: n, size: sealed.count)
             lastHash = hash; lastAt = Date(); lastSize = sealed.count; lastError = ""; saveState()
-        } catch { lastError = error.localizedDescription }
+            Activity.shared.finish("backup", note: "\(max(1, sealed.count >> 20)) MB")
+        } catch { lastError = error.localizedDescription; Activity.shared.finish("backup", ok: false, note: lastError) }
     }
 
     /// Downloads the backup and writes its files into a new folder in Documents. Live data is never touched.

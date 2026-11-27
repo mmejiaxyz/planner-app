@@ -229,9 +229,11 @@ final class PhoneSync {
         if hash == lastHash { return }
         do {
             var snap = body; snap["v"] = 1; snap["at"] = ISO8601DateFormatter().string(from: Date())
+            Activity.shared.start("phone-plan", "send", "Sending the plan to the iPhone")
             try await server.putSnapshot(try SyncCore.seal(snap, kind: .snapshot, key: key))
             lastHash = hash; lastUpload = Date(); lastUploadAt = lastUpload; lastError = ""
-        } catch { lastError = error.localizedDescription }
+            Activity.shared.finish("phone-plan")
+        } catch { lastError = error.localizedDescription; Activity.shared.finish("phone-plan", ok: false, note: lastError) }
     }
 
     /// Sends the phone what it needs to read with the Mac off: the reading version of every course PDF (mirrorReading), and
@@ -315,6 +317,7 @@ final class PhoneSync {
             guard let packed = try? (json as NSData).compressed(using: .zlib) as Data else { continue }
             let rid = String(SyncCore.newOpName().dropLast(4))
             let parts = max(1, (packed.count + SyncCore.filePart - 1) / SyncCore.filePart)
+            Activity.shared.start("phone-texts", "send", "Sending texts to the iPhone", detail: (f as NSString).lastPathComponent.replacingOccurrences(of: ".pdf", with: "", options: .caseInsensitive))
             do {
                 for n in 0..<parts {
                     let chunk = packed.subdata(in: (n * SyncCore.filePart)..<min(packed.count, (n + 1) * SyncCore.filePart))
@@ -322,8 +325,10 @@ final class PhoneSync {
                 }
             } catch {
                 try? await server.deleteText(rid, parts: parts)
-                lastError = "Text versions for the iPhone: " + error.localizedDescription; break
+                lastError = "Text versions for the iPhone: " + error.localizedDescription
+                Activity.shared.finish("phone-texts", ok: false, note: lastError); break
             }
+            Activity.shared.finish("phone-texts", note: (f as NSString).lastPathComponent)
             if let old = texts[k], let oid = old["id"] as? String, let p = old["parts"] as? Int { try? await server.deleteText(oid, parts: p) }
             texts[k] = ["id": rid, "parts": parts, "size": packed.count, "sha256": sha, "stamp": stamp]
             recheck.remove(k); changed = true
@@ -391,7 +396,7 @@ final class PhoneSync {
                         applied.append(id); drop.append(name)
                     } else { applied.append(id); drop.append(name) }
                 }
-                if !drop.isEmpty { try await server.deleteOps(drop); saveState(); planChanged(soon: true) }
+                if !drop.isEmpty { try await server.deleteOps(drop); saveState(); planChanged(soon: true); Activity.shared.done("get", "Got \(drop.count) change\(drop.count == 1 ? "" : "s") from the iPhone") }
             } catch { lastError = error.localizedDescription }
         }
         return ["ops": waiting.keys.sorted().compactMap { waiting[$0] }, "notes": newNotes, "helps": helps]
@@ -400,8 +405,9 @@ final class PhoneSync {
     /// A recording from the phone into Brain. The change file stays on the server until this worked, so a failure is
     /// tried again at a later pull (at most 3 times).
     private func fetchAudio(_ op: [String: Any], id: String, name: String) async {
-        defer { audioBusy.remove(id) }
+        defer { audioBusy.remove(id); Activity.shared.finish("audio-" + id) }
         guard let key, let server, let importAudio else { return }
+        Activity.shared.start("audio-" + id, "get", "Getting a recording from the iPhone", detail: op["title"] as? String ?? "")
         let parts = op["parts"] as? Int ?? 0, sha = op["sha256"] as? String ?? "", rec = op["rec"] as? String ?? ""
         let ext = ["m4a", "caf", "wav"].contains(op["ext"] as? String ?? "") ? op["ext"] as! String : "m4a"
         let dir = Paths.support.appendingPathComponent("phone-audio", isDirectory: true)

@@ -112,10 +112,14 @@ final class Reading {
     func figures(_ path: String) {
         guard ready(path), (readMeta(path)?["figs"] as? Int) != 1, !figsBusy.contains(path) else { return }
         figsBusy.insert(path)
+        Activity.shared.start("figs", "make", "Adding pictures to texts", detail: "\(figsBusy.count) left")
         let j = json(path), m = meta(path)
         Reading.figQueue.async {
             Reading.addFigures(pdf: path, json: j, meta: m)
-            DispatchQueue.main.async { Reading.shared.figsBusy.remove(path) }
+            DispatchQueue.main.async { MainActor.assumeIsolated {
+                Reading.shared.figsBusy.remove(path)
+                if Reading.shared.figsBusy.isEmpty { Activity.shared.finish("figs") } else { Activity.shared.detail("figs", "\(Reading.shared.figsBusy.count) left") }
+            } }
         }
     }
     /// every stored reading version without its figures yet, one after another in the background
@@ -163,6 +167,13 @@ final class Reading {
             m["figs"] = 1
             if let d = try? JSONSerialization.data(withJSONObject: m) { try? d.write(to: meta, options: .atomic) }
         }
+    }
+
+    /// For the activity indicator: the text version being made and how many wait.
+    func activity() -> [String: Any]? {
+        guard let w = working else { return queue.isEmpty ? nil : ["id": "reading", "kind": "make", "label": "Making text versions", "detail": "\(queue.count) waiting", "at": Date().timeIntervalSince1970] }
+        let name = (w.path as NSString).lastPathComponent.replacingOccurrences(of: ".pdf", with: "", options: .caseInsensitive)
+        return ["id": "reading", "kind": "make", "label": "Making text versions", "detail": name + (queue.isEmpty ? "" : " · \(queue.count) more"), "secs": Int(Date().timeIntervalSince(w.at)), "at": w.at.timeIntervalSince1970]
     }
 
     /// The app wrote marks into a PDF: same text, new size and date. Keeps a reading version that matched the file before.
@@ -227,6 +238,7 @@ final class Reading {
                 m["s"] = w.stamp["s"]; m["m"] = w.stamp["m"]
                 if let md = try? JSONSerialization.data(withJSONObject: m) { try? md.write(to: meta(file), options: .atomic) }
                 working = nil
+                Activity.shared.done("make", "Text version made", note: (file as NSString).lastPathComponent)
                 figures(file)
                 bridge?.event(["type": "readerReading", "path": file, "ready": ready(file)])
                 onDone?(file, ready(file))

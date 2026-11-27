@@ -2055,6 +2055,38 @@ func meetingAppURL(_ u: URL) -> URL? {
     return z
 }
 
+// MARK: - Activity: what runs in the background (27 Nov 2026, the user's words: "i never know if something its running in the bkg,
+// eg if data its sent I want an indication, if data is being process, download others")
+/// Work that runs on its own reports here: start, a detail while it runs, finish. The page asks for it (op `activity`) and
+/// shows it in the header. Kinds: send (to the iPhone or Cloudflare), get (from the iPhone), make (text versions, pictures).
+@MainActor
+final class Activity {
+    static let shared = Activity()
+    private var now: [String: [String: Any]] = [:]
+    private var recent: [[String: Any]] = []
+    func start(_ id: String, _ kind: String, _ label: String, detail: String = "") {
+        now[id] = ["id": id, "kind": kind, "label": label, "detail": detail, "at": now[id]?["at"] ?? Date().timeIntervalSince1970]
+    }
+    func detail(_ id: String, _ d: String) { if now[id] != nil { now[id]?["detail"] = d } }
+    func finish(_ id: String, ok: Bool = true, note: String = "") {
+        guard let x = now.removeValue(forKey: id) else { return }
+        done(x["kind"] as? String ?? "", x["label"] as? String ?? "", ok: ok, note: note)
+    }
+    /// something that happened at once (changes fetched from the iPhone)
+    func done(_ kind: String, _ label: String, ok: Bool = true, note: String = "") {
+        if let f = recent.first, (f["label"] as? String) == label, (f["ok"] as? Bool) == ok, ok, kind == "send" || note.isEmpty {   // a repeat (the plan sent again): only its time
+            recent[0]["at"] = Date().timeIntervalSince1970; recent[0]["note"] = note; return
+        }
+        recent.insert(["kind": kind, "label": label, "ok": ok, "note": note, "at": Date().timeIntervalSince1970], at: 0)
+        if recent.count > 14 { recent.removeLast(recent.count - 14) }
+    }
+    func report() -> [String: Any] {
+        var items = Array(now.values)
+        if let r = Reading.shared.activity() { items.append(r) }
+        return ["now": items.sorted { ($0["at"] as? Double ?? 0) < ($1["at"] as? Double ?? 0) }, "recent": recent, "t": Date().timeIntervalSince1970]
+    }
+}
+
 // MARK: - Updates (from the GitHub repo the app was built from)
 
 enum Updater {
@@ -2131,6 +2163,7 @@ final class Bridge: NSObject, WKScriptMessageHandler {
             let id = a["id"] as? String ?? ""
             if id.hasPrefix("phone:") { phone.noteDone(id) } else { try cal.inboxDone(id: id) }
             return ["ok": true]
+        case "activity": return Activity.shared.report()
         case "phoneOps": return await phone.pull()
         case "phoneOpsDone": await phone.done(a["ids"] as? [String] ?? []); return ["ok": true]
         case "phoneHelpTaken": phone.helpTaken(a["id"] as? String ?? ""); return ["ok": true]

@@ -57,6 +57,7 @@ function render(){
   if(typeof IN_APP!=='undefined' && IN_APP) pushWidget();
   if(typeof usageView==='function') usageView();   /* usage log: tab and calendar level (usage.js) */
   if(typeof chatRender==='function') chatRender();   /* the floating planner chat (chatwin.js) */
+  if(typeof actRender==='function') actRender();   /* background activity in the header (activity.js) */
   if(typeof IN_APP!=='undefined' && IN_APP && tab==='brain'){ if(BRAIN_OPEN) updateStage(); const th = document.getElementById('thread2'); if(th) th.scrollTop = th.scrollHeight; }
   if(fid){ const el = document.getElementById(fid); if(el && el!==document.activeElement){ el.focus(); if(sel && el.setSelectionRange) try{ el.setSelectionRange(sel[0], sel[1]); }catch(e){} } }
   app.querySelectorAll('[data-pos]').forEach(el=>{ const [t,h,l,w] = el.dataset.pos.split(',').map(Number); Object.assign(el.style,{top:t+'px',height:h+'px',left:'calc('+l+'% + 3px)',width:'calc('+w+'% - 6px)',right:'auto'}); });

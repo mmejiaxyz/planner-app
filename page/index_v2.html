@@ -1729,6 +1729,29 @@ html:not(.phone) .lb-line{text-align:center;font-size:11px;color:var(--ink-3);ma
 /* the Library holds the page still: the shelf flips sideways, only the index scrolls (library.js libHold) */
 html.lib-on,html.lib-on body{overflow:hidden;overscroll-behavior:none;height:100%}
 html.lib-on .lb-ix{max-height:calc(100vh - 300px);overscroll-behavior:contain}
+
+/* background activity in the header (activity.js): one line while something runs, the list on a click */
+header.top .actbtn{display:flex;align-items:center;gap:8px;max-width:340px;height:32px;padding:0 10px;border:1px solid transparent;background:none;color:var(--ink-3);font-size:13px;cursor:pointer;margin-left:10px;flex:0 1 auto;min-width:0}
+header.top .actbtn:hover,header.top .actbtn[aria-expanded="true"]{border-color:var(--g3);color:var(--ink)}
+header.top .actbtn.on{color:var(--ink-2);background:var(--l1)}
+.actbtn .act-l{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.actbtn .act-d{color:var(--ink-3)}
+.actbtn .act-quiet{color:var(--g5)}
+.actbtn .act-n{font-size:11px;color:var(--l7);flex:none}
+.actbtn i{flex:none;width:8px;height:8px;display:block}
+.actbtn .act-idle{border:1px solid var(--g4)}
+.actbtn .act-run{background:var(--l6);animation:actpulse 1.2s ease-in-out infinite}
+@keyframes actpulse{50%{opacity:.25}}
+@media (prefers-reduced-motion:reduce){.actbtn .act-run{animation:none}}
+.actpop{position:fixed;z-index:90;width:360px;max-height:70vh;overflow:auto;background:var(--surface);border:1px solid var(--g3);box-shadow:0 12px 32px rgba(0,0,0,.12);padding:6px 0 8px;font-size:13.5px}
+.actpop .act-h{font-size:10.5px;letter-spacing:.08em;color:var(--ink-3);padding:10px 14px 4px}
+.actpop .act-row{display:grid;grid-template-columns:16px 1fr auto;gap:8px;padding:6px 14px;align-items:start;border-bottom:1px solid var(--rule)}
+.actpop .act-row:last-child{border-bottom:0}
+.actpop .act-row b{font-weight:500}
+.actpop .act-k{color:var(--l7);font-family:var(--mono);font-size:12px;line-height:1.5}
+.actpop .act-bad .act-k{color:var(--red)}
+.actpop .act-none{display:block}
+.actpop .mono.faint{font-size:11px;white-space:nowrap}
 </style>
 </head>
 <body>
@@ -1773,6 +1796,7 @@ html.lib-on .lb-ix{max-height:calc(100vh - 300px);overscroll-behavior:contain}
 <script src="js/readtime.js"></script>
 <script src="js/hardcover.js"></script>
 <script src="js/library.js"></script>
+<script src="js/activity.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>
