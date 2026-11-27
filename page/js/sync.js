@@ -96,8 +96,9 @@ function phoneBlock(empty){
      is something to know: an error, changes the Mac has not applied yet, or a plan more than a day old. */
   const stale = s.snapshotAt && (Date.now() - Date.parse(s.snapshotAt)) > 86400000;
   const line = [];
-  if(s.error) line.push('<span class="tag warn">'+ICON.warn+esc(s.error)+'</span>');
-  if(waiting) line.push('<b>'+waiting+' change'+(waiting===1?'':'s')+' waiting for the Mac</b>');
+  const act = typeof phActHTML==='function';   /* errors and waiting changes are in the activity line at the top (activity.js) */
+  if(s.error && !act) line.push('<span class="tag warn">'+ICON.warn+esc(s.error)+'</span>');
+  if(waiting && !act) line.push('<b>'+waiting+' change'+(waiting===1?'':'s')+' waiting for the Mac</b>');
   if(stale && !s.error) line.push('Plan from the Mac '+esc(agoText(s.snapshotAt))+'. Open Planner on the Mac to update it.');
   let h = '<section class="phsync" aria-label="Sync">' + (line.length ? '<div class="phline"><span>'+line.join(' · ')+'</span></div>' : '');
   h += '<div class="phnote"><textarea id="ph-note" rows="2" placeholder="Note for the Mac: a task, a date, a change">'+esc(PHONE_NOTE.draft)+'</textarea>'

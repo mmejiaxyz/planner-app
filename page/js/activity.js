@@ -54,3 +54,55 @@ document.addEventListener('click', e=>{
 });
 document.addEventListener('keydown', e=>{ if(e.key==='Escape' && ACT.open){ ACT.open = false; actRender(); } });
 if(typeof IN_APP!=='undefined' && IN_APP && !(typeof PHONE!=='undefined' && PHONE)) setTimeout(actPoll, 1500);
+
+/* ---------- the iPhone ----------
+   The same idea from what the phone app already reports (no new native code): changes and notes waiting for the Mac,
+   texts still to come from the Mac, files downloading or asked for, recordings being sent, sync errors, and the reading
+   partner thinking. A slim line at the top of every phone screen; a tap shows the list. While something moves, the phone
+   asks every 4 s; the line is redrawn on its own, not the whole screen. */
+const PACT = {open:false, timer:null};
+function phActItems(){
+  const s = (typeof SYNC!=='undefined' && SYNC) || {}, out = [];
+  if(s.error) out.push({kind:'bad', label:'Sync problem', detail:s.error});
+  if(s.waiting) out.push({kind:'send', label:s.waiting+' change'+(s.waiting===1?'':'s')+' waiting for the Mac', detail:'They go in when Planner is open on the Mac'});
+  if((s.notes||[]).length) out.push({kind:'send', label:s.notes.length+' note'+(s.notes.length===1?'':'s')+' waiting for the Mac', detail:''});
+  let left = 0;
+  Object.entries(typeof PFILES!=='undefined' ? PFILES : {}).forEach(([cid, list])=>(list||[]).forEach(x=>{
+    const name = String(x.f||'').split('/').pop().replace(/\.pdf$/i,'');
+    if(x.state==='downloading') out.push({kind:'get', label:'Getting a file from the Mac', detail:name+(x.progress!=null?' · '+Math.round(x.progress*100)+'%':'')});
+    else if(x.state==='asking' || x.state==='late') out.push({kind:'get', label:'Asked the Mac for a text', detail:name+(x.state==='late'?' · the Mac has not answered yet':'')});
+    else if(x.state==='error') out.push({kind:'bad', label:'A file did not come', detail:name+(x.error?' · '+x.error:'')});
+    if(!x.reading && !(typeof TEXTLESS!=='undefined' && TEXTLESS.has(cid+'/'+x.f))) left++;
+  }));
+  if(left) out.push({kind:'get', label:'Texts still to come from the Mac', detail:left+' left · they arrive while the Mac is on'});
+  const rs = (typeof PHONE_REC!=='undefined' && PHONE_REC.state && PHONE_REC.state.uploads) || [];
+  rs.filter(u=>u.state!=='done').forEach(u=>out.push({kind:'send', label:'Sending a recording to the Mac', detail:(u.title||'Recording')+(u.parts?' · '+(u.sent||0)+' of '+u.parts+' parts':'')}));
+  if(typeof READ!=='undefined' && READ && READ.busy) out.push({kind:'think', label:'Explaining', detail:'DeepSeek'});
+  return out;
+}
+function phActHTML(){
+  if(typeof PHONE==='undefined' || !PHONE) return '';
+  const s = (typeof SYNC!=='undefined' && SYNC) || {}, items = phActItems(), first = items[0];
+  const mark = k => k==='bad' ? '!' : ACT_KIND[k] || '·';
+  let h = '<div id="ph-act-wrap"><button class="ph-act'+(first?' on':'')+(first && first.kind==='bad'?' bad':'')+'" data-phact="1" aria-expanded="'+PACT.open+'">'
+    + (first ? '<i class="act-run"></i><span>'+esc(first.label)+(items.length>1?' <b class="mono">+'+(items.length-1)+'</b>':'')+'</span>'
+             : '<i class="act-idle"></i><span>Up to date'+(s.snapshotAt?' · plan from the Mac '+esc(agoText(s.snapshotAt)):'')+'</span>')+'</button>';
+  if(PACT.open) h += '<div class="ph-actlist">'+(items.length ? items.map(x=>'<div class="act-row'+(x.kind==='bad'?' act-bad':'')+'"><span class="act-k">'+mark(x.kind)+'</span><span><b>'+esc(x.label)+'</b>'+(x.detail?'<br><span class="muted">'+esc(x.detail)+'</span>':'')+'</span></div>').join('') : '<div class="act-row act-none muted">Nothing is moving.</div>')
+    + '<div class="act-row act-none muted">Plan from the Mac '+esc(agoText(s.snapshotAt))+' · syncs every minute while open</div></div>';
+  return h + '</div>';
+}
+function phActRedraw(){ const w = document.getElementById('ph-act-wrap'); if(w) w.outerHTML = phActHTML(); }
+async function phActPoll(){
+  clearTimeout(PACT.timer);
+  if(typeof PHONE==='undefined' || !PHONE) return;
+  const moving = phActItems().some(x=>x.kind==='get' && /Getting|Asked/.test(x.label) || x.kind==='send' && /recording/.test(x.label));
+  if(moving || PACT.open){
+    try{ SYNC = await APP.call('syncStatus'); }catch(e){}
+    if(typeof phoneFilesRefresh==='function') await phoneFilesRefresh();
+    try{ if(typeof PHONE_REC!=='undefined') PHONE_REC.state = await APP.call('recState'); }catch(e){}
+    phActRedraw();
+  }
+  PACT.timer = setTimeout(phActPoll, moving || PACT.open ? 4000 : 15000);
+}
+document.addEventListener('click', e=>{ if(e.target.closest('[data-phact]')){ e.preventDefault(); PACT.open = !PACT.open; phActRedraw(); if(PACT.open) phActPoll(); } });
+if(typeof PHONE!=='undefined' && PHONE) setTimeout(phActPoll, 3000);

@@ -61,12 +61,13 @@ function phToday(){
 
 /* ---------- shared bits ---------- */
 const phHead = (title, right) => '<div class="ph-hd"><h1>'+title+'</h1>'+(right?'<span class="ph-r">'+esc(right)+'</span>':'')+'</div>';
-/* the sync line: only an error, changes waiting for the Mac, or an old plan (as before, phoneBlock) */
+/* the sync line: an old plan (errors, waiting changes and notes are in the activity line, activity.js) */
 function phLine(){
   const s = SYNC || {}, line = [], stale = s.snapshotAt && (Date.now() - Date.parse(s.snapshotAt)) > 86400000;
-  if(s.error) line.push(esc(s.error));
-  if(s.waiting) line.push(s.waiting+' change'+(s.waiting===1?'':'s')+' waiting for the Mac');
-  if((s.notes||[]).length) line.push(s.notes.length+' note'+(s.notes.length===1?'':'s')+' waiting');
+  const act = typeof phActHTML==='function';   /* errors and waiting changes and notes are in the activity line at the top (activity.js) */
+  if(s.error && !act) line.push(esc(s.error));
+  if(s.waiting && !act) line.push(s.waiting+' change'+(s.waiting===1?'':'s')+' waiting for the Mac');
+  if((s.notes||[]).length && !act) line.push(s.notes.length+' note'+(s.notes.length===1?'':'s')+' waiting');
   if(stale && !s.error) line.push('Plan from the Mac '+esc(agoText(s.snapshotAt)));
   return line.length ? '<div class="ph-line">'+line.join(' · ')+'</div>' : '';
 }
@@ -237,7 +238,7 @@ function phRender(){
   if(tab==='courses' || tab==='all-tasks') tab = 'tasks';
   const s = SYNC || {};
   if(!s.paired) return phoneBlock();
-  return tab==='calendar' ? phCalendar() : tab==='tasks' ? phTasks() : phToday();
+  return (typeof phActHTML==='function' ? phActHTML() : '') + (tab==='calendar' ? phCalendar() : tab==='tasks' ? phTasks() : phToday());   /* what moves in the background (activity.js) */
 }
 /* sheets live outside #app so they stay put while the page scrolls */
 function phSheets(){
