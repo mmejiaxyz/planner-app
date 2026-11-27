@@ -53,7 +53,7 @@ function render(){
   const ae = document.activeElement, fid = ae && ae.id, sel = fid && ('selectionStart' in ae) ? [ae.selectionStart, ae.selectionEnd] : null;
   if(typeof PHONE!=='undefined' && PHONE){ app.innerHTML = phRender(); document.querySelectorAll('nav.tabs a').forEach(a=>{ if(a.dataset.tab===tab) a.setAttribute('aria-current','page'); else a.removeAttribute('aria-current'); }); phSheets(); }
   else app.innerHTML = tab==='today'?viewToday(): tab==='calendar'?viewCalendar(): tab==='courses'?viewCourses(): tab==='brain'?viewBrain(): tab==='library'?viewLibrary(): viewAll();
-  if(tab==='library' && typeof libLayout==='function') libLayout();   /* the shelf is drawn from the width it has (library.js) */
+  if(typeof libLayout==='function'){ if(tab==='library') libLayout(); else if(typeof libHold==='function') libHold(); }   /* the shelf is drawn from the width it has (library.js) */
   if(typeof IN_APP!=='undefined' && IN_APP) pushWidget();
   if(typeof usageView==='function') usageView();   /* usage log: tab and calendar level (usage.js) */
   if(typeof chatRender==='function') chatRender();   /* the floating planner chat (chatwin.js) */

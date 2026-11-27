@@ -101,6 +101,7 @@ function viewLibrary(){
 
 /* the shelf: drawn after render, from the space it has */
 function libLayout(){
+  libHold();
   const el = document.getElementById('lb-shelf'), books = LIB._books; if(!el || !books || !books.length) return;
   const W = el.clientWidth, H = Math.max(240, Math.min(460, window.innerHeight - el.getBoundingClientRect().top - 130));
   el.style.height = (H+44)+'px';
@@ -127,6 +128,23 @@ function libLayout(){
   el.innerHTML = h;
 }
 window.addEventListener('resize', ()=>{ if(tab==='library') libLayout(); });
+/* No scroll up or down on the Library (27 Nov 2026, the user's words: "Library should not be scrollable from up down, but left ro
+   right should allow me to see different books"): the page is held still while the tab is open, and a sideways swipe or
+   scroll flips the shelf, one book for every LIB_STEP pixels. The index on the left scrolls on its own when a course is long. */
+const LIB_STEP = 48;
+let libWheel = 0, libWheelT = 0;
+function libHold(){ document.documentElement.classList.toggle('lib-on', typeof tab!=='undefined' && tab==='library' && !(typeof PHONE!=='undefined' && PHONE)); }
+window.addEventListener('wheel', e=>{
+  if(tab!=='library' || (typeof READ!=='undefined' && READ)) return;
+  if(e.target.closest && e.target.closest('.lb-ix, #pchat-host, .pchat')) return;   /* the index and the chat window scroll as usual */
+  const x = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : (e.shiftKey ? e.deltaY : 0);
+  e.preventDefault();                                                      /* nothing moves up or down */
+  if(!x) return;
+  if(Date.now() - libWheelT > 400) libWheel = 0;                           /* a new swipe starts from nothing */
+  libWheelT = Date.now(); libWheel += x;
+  const n = Math.trunc(libWheel / LIB_STEP);
+  if(n){ libWheel -= n * LIB_STEP; libMove(Math.max(-3, Math.min(3, n))); }
+}, {passive:false});
 
 function libGo(k){ LIB.sel = k; const b = (LIB._books||[]).find(x=>libKey(x.c.id, x.f)===k); if(b && !LIB.q) LIB.open = b.c.id; render(); }
 function libMove(d){ const bs = LIB._books||[]; if(!bs.length) return; const i = (LIB._i + d + bs.length) % bs.length; libGo(libKey(bs[i].c.id, bs[i].f)); }

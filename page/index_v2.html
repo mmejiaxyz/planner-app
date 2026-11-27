@@ -1725,6 +1725,10 @@ html:not(.phone) .lb-line{text-align:center;font-size:11px;color:var(--ink-3);ma
 .bk .bk-flow .bk-q{margin:.9em 0 .9em 1.6em}
 .bk .bk-flow .bk-epi{font-size:.84em;line-height:1.5}
 .bk .bk-flow .bk-fn{font-family:var(--serif);font-weight:600;font-size:.62em;vertical-align:super;line-height:0}
+
+/* the Library holds the page still: the shelf flips sideways, only the index scrolls (library.js libHold) */
+html.lib-on,html.lib-on body{overflow:hidden;overscroll-behavior:none;height:100%}
+html.lib-on .lb-ix{max-height:calc(100vh - 300px);overscroll-behavior:contain}
 </style>
 </head>
 <body>
