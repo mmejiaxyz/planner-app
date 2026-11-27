@@ -88,7 +88,7 @@ function phActHTML(){
     + (first ? '<i class="act-run"></i><span>'+esc(first.label)+(items.length>1?' <b class="mono">+'+(items.length-1)+'</b>':'')+'</span>'
              : '<i class="act-idle"></i><span>Up to date'+(s.snapshotAt?' · plan from the Mac '+esc(agoText(s.snapshotAt)):'')+'</span>')+'</button>';
   if(PACT.open) h += '<div class="ph-actlist">'+(items.length ? items.map(x=>'<div class="act-row'+(x.kind==='bad'?' act-bad':'')+'"><span class="act-k">'+mark(x.kind)+'</span><span><b>'+esc(x.label)+'</b>'+(x.detail?'<br><span class="muted">'+esc(x.detail)+'</span>':'')+'</span></div>').join('') : '<div class="act-row act-none muted">Nothing is moving.</div>')
-    + '<div class="act-row act-none muted">Plan from the Mac '+esc(agoText(s.snapshotAt))+' · syncs every minute while open</div></div>';
+    + '<div class="act-row act-none muted">Plan from the Mac '+esc(agoText(s.snapshotAt))+' · syncs every minute while open'+(s.page?'<br>Page: '+esc(s.page==='built in'?'the one this app came with':'from the Mac, '+s.page):'')+'</div></div>';
   return h + '</div>';
 }
 function phActRedraw(){ const w = document.getElementById('ph-act-wrap'); if(w) w.outerHTML = phActHTML(); }
