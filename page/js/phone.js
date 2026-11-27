@@ -71,7 +71,15 @@ function phLine(){
   if(stale && !s.error) line.push('Plan from the Mac '+esc(agoText(s.snapshotAt)));
   return line.length ? '<div class="ph-line">'+line.join(' · ')+'</div>' : '';
 }
-const phAddBar = () => (SYNC||{}).paired ? '<button class="ph-addbar ph-logo" data-ph="add" aria-label="Add a task, a note for the Mac or a recording">'+PLANNER_LOGO+'</button>' : '';   /* the Planner logo as a square (27 Nov 2026) */
+/* Add: the Planner logo as a square in the tab bar, right of Tasks (27 Nov 2026, the user's words: "for the phone place it in the
+   lower bar to the right fo tasks"). Drawn into the nav on every render; gone while the phone is not paired. */
+const phAddBar = () => '';
+function phNavAdd(){
+  const nav = document.querySelector('nav.tabs'); if(!nav) return;
+  let b = nav.querySelector('.ph-navadd');
+  if(!(SYNC||{}).paired){ if(b) b.remove(); return; }
+  if(!b){ b = document.createElement('button'); b.type = 'button'; b.className = 'ph-navadd'; b.dataset.ph = 'add'; b.setAttribute('aria-label', 'Add a task, a note for the Mac or a recording'); b.innerHTML = PLANNER_LOGO; nav.appendChild(b); }
+}
 
 /* ---------- task sheet (P2): everything a task can do on the phone ---------- */
 function phTaskSheet(){
@@ -237,6 +245,7 @@ function phByCourse(open){
 function phRender(){
   if(tab==='courses' || tab==='all-tasks') tab = 'tasks';
   const s = SYNC || {};
+  phNavAdd();
   if(!s.paired) return phoneBlock();
   return (typeof phActHTML==='function' ? phActHTML() : '') + (tab==='calendar' ? phCalendar() : tab==='tasks' ? phTasks() : phToday());   /* what moves in the background (activity.js) */
 }
