@@ -27,6 +27,8 @@ STAMP=$(date +%Y-%m-%d_%H%M%S)
 mkdir -p "$DATA/backups/update-$STAMP"
 cp "$DATA/plan.json" "$DATA/backups/update-$STAMP/" 2>/dev/null || true
 rsync -a --exclude audio --exclude work "$DATA/brain/" "$DATA/backups/update-$STAMP/brain/" 2>/dev/null || true
+# keep the 5 newest update backups (27 Nov 2026: each is about 2 MB and a day of updates made six); the plan's own copies are pruned by the app
+ls -1d "$DATA"/backups/update-* 2>/dev/null | sort -r | tail -n +6 | while IFS= read -r old; do rm -rf "$old"; done
 [[ "$(git rev-list --count HEAD..@{u} 2>/dev/null || echo 0)" == "0" ]] || git pull --ff-only --quiet
 # the app is at the repo root (since 26 Nov 2026) or in winter-term-tracker/ (older layout)
 MAC="$REPO/mac-app"; [ -d "$MAC" ] || MAC="$REPO/winter-term-tracker/mac-app"
