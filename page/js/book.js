@@ -92,7 +92,7 @@ async function bkOpen(){
 const BK_ATTR = /^\s*[-–—]\s?[A-ZÀ-Þ][^.!?]{1,70}$/;
 const BK_ODDCASE = /[a-z]I|[A-Z]i[A-Z]|\b[A-Z][a-z]?I[a-z]/;
 function bkShape(blocks, notes){
-  bkMarkers(blocks, notes);
+  if(!(+bkShape.v >= 2)) bkMarkers(blocks, notes);   /* version 2 texts carry their markers */
   blocks.forEach((b,i)=>{
     const nearHead = i < 15 || [1,2,3].some(k=>blocks[i-k] && (blocks[i-k].k==='h' || blocks[i-k].k==='chap'));   /* epigraphs open a book or a chapter; a dash elsewhere is dialogue */
     if((b.k==='h' || b.k==='p' || b.k==='q') && nearHead && BK_ATTR.test(b.t)){ b.attr = true; const pv = blocks[i-1]; if(pv && (pv.k==='p' || pv.k==='q') && pv.t.length < 900) pv.epi = true; }
@@ -133,7 +133,7 @@ function bkLoad(text){
     b.L.sort((a,c)=>a.o-c.o);
   });
   Object.keys(d.byPage).forEach(k=>{ d.byPage[k] = [...new Set(d.byPage[k])]; });
-  bkShape(d.blocks, d.notes||[]);
+  bkShape.v = d.v; bkShape(d.blocks, d.notes||[]);
   READ.book = d; READ.bkState = null;
   READ.hl = READ.hl || []; READ.topics = READ.topics || [];
 }
@@ -353,7 +353,12 @@ function bkBlockHTML(b){
       + (b.t ? '<figcaption>'+esc(b.t)+'</figcaption>' : '')+(PHONE && !READ.docOpen ? '' : '<button class="lnk bk-figpg" data-bk="orig" data-pg="'+pg+'">p. '+esc(bkLabel(pg))+' · original page</button>')+'</figure>';
     return '<figure class="bk-fig" data-b="'+b.i+'">'+(PHONE && !READ.docOpen ? '<span class="faint">Figure on p. '+esc(bkLabel(pg))+' · its picture comes with the next text from the Mac</span>' : '<button class="lnk" data-bk="orig" data-pg="'+pg+'">Figure on p. '+esc(bkLabel(pg))+' · show the original page</button>')+(b.t ? '<figcaption>'+esc(b.t)+'</figcaption>' : '')+'</figure>';
   }
-  const t = b.t, rs = bkRanges(b.i), fn = b.fn || [];
+  const t = b.t, fn = b.fn || [];
+  /* version 2 of the text: italics and bold from the PDF's fonts (not on headings, the level sets their look), and a chapter
+     title's number as a small label above it ("8. Title") */
+  const rs = bkRanges(b.i).concat(b.k==='h' || b.k==='chap' || b.attr ? [] : (b.st||[]).filter(([o,l,st])=>!(l<=1 && st==='b')).map(([o,l,st])=>({s:o, e:o+l, cls:(st.includes('b')?'bk-b ':'')+(st.includes('i')?'bk-i':'')})));
+  const hn = b.k==='h' && b.lv===1 ? /^\s*((?:\d{1,2}|[IVXLC]{1,6})\.)\s+/.exec(t) : null;
+  if(hn) rs.push({s:0, e:hn[1].length, cls:'bk-hnum'});
   const cuts = new Set([0, t.length]);
   rs.forEach(r=>{ cuts.add(r.s); cuts.add(r.e); }); fn.forEach(f=>{ cuts.add(f[0]); cuts.add(f[0]+f[1]); });
   const pts = [...cuts].filter(x=>x>=0 && x<=t.length).sort((a,c)=>a-c);
@@ -371,7 +376,7 @@ function bkBlockHTML(b){
   if(b.attr) return '<p class="bk-attr" data-b="'+b.i+'">'+h+'</p>';
   if(b.epi) return '<blockquote class="bk-q bk-epi" data-b="'+b.i+'">'+h+'</blockquote>';
   if(b.k==='chap') return '<div class="bk-chap'+(b.caps?' bk-caps':'')+'" data-b="'+b.i+'">'+h+'</div>';
-  if(b.k==='h') return '<h3 class="bk-h'+(b.caps?' bk-caps':'')+'" data-b="'+b.i+'">'+h+'</h3>';
+  if(b.k==='h') return '<h3 class="bk-h bk-h'+(b.lv||2)+(b.caps?' bk-caps':'')+'" data-b="'+b.i+'">'+h+'</h3>';
   if(b.k==='q') return '<blockquote class="bk-q" data-b="'+b.i+'">'+h+'</blockquote>';
   if(b.k==='li') return '<p class="bk-li" data-b="'+b.i+'">'+h+'</p>';
   return '<p class="bk-p'+(lower ? ' cont' : '')+'" data-b="'+b.i+'">'+h+'</p>';

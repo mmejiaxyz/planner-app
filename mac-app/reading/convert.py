@@ -11,12 +11,15 @@ Run with Docling's own Python (uv tool install "docling[ocrmac]"):
   python -I convert.py --jobs                          lines "<in.pdf>\t<out.json>" on stdin, one model load for all
 Prints one JSON line per file: {"file", "ok", "pages", "secs"} or {"file", "ok": false, "error"}.
 
-Output (version 1). Coordinates are PDF points from the page's top left (Docling's page size).
+Output (version 2, 27 Nov 2026: levels, italics and bold, raised note markers). Coordinates are PDF points from the page's
+top left (Docling's page size).
   {v, by, pages, sizes: [[w, h]], labels: {"<pdf page>": "<printed>"}, ocr,
-   blocks: [{k, t, r: [{pg, o, ln: [[o, x0, y0, x1, y1]]}], fn?: [[o, len, note]]}],
+   blocks: [{k, t, r: [{pg, o, ln: [[o, x0, y0, x1, y1]]}], fn?: [[o, len, note]], st?: [[o, len, "i" | "b" | "bi"]], lv?: 1-3}],
    notes: [{m, t, pg}], orig: [pdf pages best read as the original]}
   k: p paragraph, h heading, chap chapter number, q block quote, li list item, fig figure or table (t = caption).
   r: one run per page the block is on; o = where the run starts in t; ln = its lines, o = where the line starts in t.
+  st: italic and bold from the font names of the PDF's words (a text layer; scans have none). lv: a heading's level from its
+  type size against the body text of its page (1 chapter, 2 section, 3 sub-section).
 """
 import json, re, sys, time
 from collections import Counter
@@ -105,6 +108,90 @@ def number_of(s):
     return None
 
 
+def font_style(name):
+    """'ABCDEF+ChaparralPro-SemiboldIt' -> 'bi'; '' when regular. The part after the last '-' or ',' names the style."""
+    n = name.split('+')[-1].lower()
+    suf = re.split(r'[-,]', n)[-1] if re.search(r'[-,]', n) else n
+    it = bool(re.search(r'italic|oblique|slanted|(?:^|[a-z])it$|kursiv', suf))
+    bd = bool(re.search(r'bold|semibold|demi|black|heavy|fett', suf))
+    return ('b' if bd else '') + ('i' if it else '')
+
+
+def shape_blocks(blocks, pages, notes, body_h):
+    """Version 2: style ranges, raised note markers and heading levels, read line by line from the final blocks."""
+    # a book set in italic or bold throughout would make everything a span: then that style says nothing
+    allw = [w for P in pages.values() for w in P.get('words', [])]
+    share = Counter(c for w in allw for c in w[5])
+    off = {c for c in 'ib' if allw and share[c] > 0.5 * len(allw)}
+    med = {}
+    for pg, P in pages.items():
+        hs = sorted(w[3] - w[1] for w in P.get('words', []))
+        med[pg] = hs[len(hs) // 2] if hs else 0
+    by_m = {}
+    for ni, n in enumerate(notes):
+        if n.get('m'):
+            by_m.setdefault(n['m'], []).append(ni)
+    used = {f[2] for b in blocks for f in b.get('fn', [])}
+    for b in blocks:
+        if b['k'] == 'fig':
+            continue
+        t = b['t']
+        lines = sorted(((l[0], l[1], l[2], l[3], l[4], r['pg']) for r in b['r'] for l in r['ln']), key=lambda x: x[0])
+        spans = []
+        for li, (o, x0, y0, x1, y1, pg) in enumerate(lines):
+            end = lines[li + 1][0] if li + 1 < len(lines) else len(t)
+            s = t[o:end]
+            ws = sorted((w for w in pages.get(pg, {}).get('words', []) if x0 - 2 <= (w[0] + w[2]) / 2 <= x1 + 2 and y0 - 2 <= (w[1] + w[3]) / 2 <= y1 + 2), key=lambda w: w[0])
+            cur = 0
+            for w in ws:
+                wt = clean(w[4], False)
+                i = s.find(wt, cur)
+                if i < 0:
+                    continue
+                cur = i + len(wt)
+                st = ''.join(c for c in w[5] if c not in off)
+                h = w[3] - w[1]
+                raised = med.get(pg) and h < med[pg] * 0.8 and (w[1] + w[3]) / 2 < (y0 + y1) / 2 - 0.1 * (y1 - y0)
+                if raised and re.fullmatch(r'\d{1,3}|\*{1,3}|[†‡]', wt):
+                    at = o + i
+                    if any(f[0] <= at < f[0] + f[1] for f in b.get('fn', [])):
+                        continue
+                    cand = [ni for ni in by_m.get(wt, []) if ni not in used]
+                    same = [ni for ni in cand if notes[ni]['pg'] == pg] or [ni for ni in cand if notes[ni]['pg'] > pg][:1]
+                    if same:
+                        b.setdefault('fn', []).append([at, len(wt), same[0]])
+                        used.add(same[0])
+                    continue
+                if st:
+                    spans.append([o + i, len(wt), st])
+        # neighbouring words of one style become one range (the space between them included)
+        spans.sort()
+        merged = []
+        for sp in spans:
+            if merged and merged[-1][2] == sp[2] and sp[0] - (merged[-1][0] + merged[-1][1]) <= 1:
+                merged[-1][1] = sp[0] + sp[1] - merged[-1][0]
+            else:
+                merged.append(sp)
+        merged = [m for m in merged if m[0] < len(t)]
+        for m in merged:
+            m[1] = min(m[1], len(t) - m[0])
+        # a block in one style throughout (a bold heading, an italic epigraph) keeps it, the reader decides how it looks
+        if merged:
+            b['st'] = merged
+        if b.get('fn'):
+            b['fn'].sort()
+    # heading levels, within this book: its most common heading size is the section; clearly bigger, or numbered like a
+    # chapter ("8. Title", "Chapter 3", "II."), is a chapter; clearly smaller is a sub-section
+    hs = [b for b in blocks if b['k'] == 'h' and b['r']]
+    ratio = {id(b): b.get('lh', 0) / max(1, body_h(b['r'][0]['pg'])) for b in hs}
+    common = Counter(round(r * 20) / 20 for r in ratio.values()).most_common(1)
+    sec = common[0][0] if common else 1.2
+    CHAP = re.compile(r'^(?:\d{1,2}|[IVXLC]{1,6})\.\s+\S|^(?:chapter|kapitel|cap[ií]tulo|part|teil|parte)\s+\w', re.I)
+    for b in hs:
+        r = ratio[id(b)]
+        b['lv'] = 1 if CHAP.match(b['t']) or r > sec * 1.25 else 3 if r < sec * 0.88 else 2
+
+
 def convert(conv, src):
     from docling_core.types.doc import ContentLayer, DocItemLabel
     res = conv.convert(src)
@@ -134,8 +221,15 @@ def convert(conv, src):
                         hidden += 1
                         continue
                 cells.append([b.l, b.t, b.r, b.b, c.text.strip(), c.from_ocr])
+        words = []   # word cells with a style or in raised small type: (l, t, r, b, text, style)
+        if p.parsed_page:
+            for w in (p.parsed_page.word_cells or []):
+                if w.from_ocr or not w.text.strip():
+                    continue
+                b = w.rect.to_bounding_box().to_top_left_origin(page_height=p.size.height)
+                words.append((b.l, b.t, b.r, b.b, w.text.strip(), font_style(getattr(w, 'font_name', '') or '')))
         p._image_cache = {} if hasattr(p, '_image_cache') else None
-        pages[n] = {'w': p.size.width, 'h': p.size.height, 'cells': cells, 'used': set()}
+        pages[n] = {'w': p.size.width, 'h': p.size.height, 'cells': cells, 'used': set(), 'words': words}
     npages = max(pages) if pages else 0
     ocr = any(c[5] for pg in pages.values() for c in pg['cells'])
     garbled = len(GARBLE.findall(' '.join(c[4] for pg in pages.values() for c in pg['cells'] if not c[5]))) >= 3
@@ -448,13 +542,14 @@ def convert(conv, src):
             if found:
                 break
 
+    shape_blocks(blocks, pages, notes, body_h)
     for b in blocks:
         b.pop('lh', None)
     # pages best read as the original: mostly figures, or nothing read from them
     orig = sorted(pg for pg in pages if fig_area[pg] > 0.45 and text_chars[pg] < 600 or (text_chars[pg] < 40 and pages[pg]['cells'] == []))
     import importlib.metadata as md
     return {
-        'v': 1, 'by': 'docling ' + md.version('docling'), 'pages': npages,
+        'v': 2, 'by': 'docling ' + md.version('docling'), 'pages': npages,
         'sizes': [[round(pages[i]['w'], 1), round(pages[i]['h'], 1)] if i in pages else [0, 0] for i in range(1, npages + 1)],
         'labels': labels, 'ocr': ocr, 'fixed': garbled, 'hidden': hidden, 'blocks': blocks, 'notes': notes, 'orig': orig,
     }

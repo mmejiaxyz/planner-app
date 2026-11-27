@@ -12,7 +12,7 @@ import PDFKit
 @MainActor
 final class Reading {
     static let shared = Reading()
-    static let version = 1
+    static let version = 2   // 2 (27 Nov 2026): heading levels, italics and bold, raised note markers; older versions are made again in the background
     weak var bridge: Bridge?
     /// a reading version was made (true) or could not be (false): the phone sync sends it at once when the phone asked
     var onDone: ((String, Bool) -> Void)?
