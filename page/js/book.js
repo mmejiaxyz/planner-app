@@ -48,7 +48,8 @@ const BK_ICON = {
 /* Themes & Settings (the user's reference: Apple Books, 25 Nov 2026), in the P15 shades with square edges.
    A theme is page colours only (27 Nov 2026, the user's words: "too many reading modes, I dont want the font to change or the
    sizing, just the colors"): the font is Literata unless another is picked in Customize on the Mac; Bold and Focus, which only
-   changed the font, are gone (a kept choice of them falls back to Original). On the phone the Aa menu has only the colours. */
+   changed the font, are gone (a kept choice of them falls back to Original). On the phone the Aa menu has the text size and the
+   colours (27 Nov 2026, the user's question: "Why I cant change size in the ios app for the text?"), no Customize. */
 const BK_FONTS = {
   literata:['Literata', "'Literata','Iowan Old Style',Georgia,serif"], charter:['Charter', "Charter,'Bitstream Charter',Georgia,serif"],
   iowan:['Iowan Old Style', "'Iowan Old Style',Georgia,serif"], newyork:['New York', "ui-serif,'New York',Georgia,serif"],
@@ -231,7 +232,7 @@ function bkApplyPref(){
   const host = document.getElementById('reader'); if(!host) return;
   const p = bkPref(), t = BK_THEMES[p.theme], night = p.auto && bkNight() && !t.dark;
   const font = (!PHONE && BK_FONTS[p.font]) || BK_FONTS.literata;   /* themes never change the font; the phone has one look */
-  if(PHONE){ p.size = BK_DEF.size; p.custom = false; p.justify = false; p.bold = false; p.boldSet = true; }
+  if(PHONE){ p.custom = false; p.justify = false; p.bold = false; p.boldSet = true; }   /* the phone keeps its text size (A / A), one font, no Customize */
   host.style.setProperty('--bk-size', p.size+'px');
   host.style.setProperty('--bk-font', font[1]);
   host.style.setProperty('--bk-weight', bkBoldOn(p) ? '600' : '400');
@@ -571,7 +572,7 @@ const BK_GEAR = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" str
 function bkThemesHTML(){
   const p = bkPref();
   return '<div class="bk-menu bk-aapop" role="dialog" aria-label="Themes and settings"><div class="bk-aah">Themes &amp; Settings</div>'
-    + (PHONE ? '<div class="bk-aarow">' : '<div class="bk-aarow"><div class="bk-seg"><button data-bk="smaller" aria-label="Smaller text" title="Smaller ('+p.size+')"><span style="font-size:14px">A</span></button><button data-bk="bigger" aria-label="Bigger text" title="Bigger ('+p.size+')"><span style="font-size:21px">A</span></button></div>')
+    + ('<div class="bk-aarow"><div class="bk-seg"><button data-bk="smaller" aria-label="Smaller text" title="Smaller ('+p.size+')"><span style="font-size:14px">A</span></button><button data-bk="bigger" aria-label="Bigger text" title="Bigger ('+p.size+')"><span style="font-size:21px">A</span></button></div>')
     + '<button class="bk-sun'+(p.auto?' on':'')+'" data-bk="autodark" role="switch" aria-checked="'+p.auto+'" title="Dark when the '+(PHONE?'iPhone':'Mac')+' is dark">'+BK_SUN+'</button></div>'
     + '<div class="bk-tiles">'+Object.keys(BK_THEMES).map(k=>{ const t = BK_THEMES[k], f = BK_FONTS.literata[1];
         return '<button class="bk-tile'+(p.theme===k?' on':'')+'" data-bk="theme" data-v="'+k+'" style="background:'+t.bg+';color:'+t.ink+'" aria-pressed="'+(p.theme===k)+'"><span class="aa" style="font-family:'+esc(f)+'">Aa</span><span style="font-family:'+esc(f)+'">'+t.name+'</span></button>'; }).join('')+'</div>'
