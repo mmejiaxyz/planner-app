@@ -1775,6 +1775,14 @@ html.phone .ph-actlist .act-row:last-child{border-bottom:0}
 html.phone .ph-actlist .act-k{color:var(--l7);font-family:var(--mono);font-size:12px;line-height:1.5}
 html.phone .ph-actlist .act-bad .act-k{color:var(--red)}
 html.phone .ph-actlist .act-none{display:block;font-size:12.5px}
+
+/* the Planner logo as the button: Mac chat launcher, iPhone add (core.js PLANNER_LOGO) */
+html:not(.phone) .pc-launch.pc-logo{width:56px;height:56px;padding:0;border:0;background:none;box-shadow:0 6px 18px rgba(26,26,26,.16);display:block;right:max(20px,calc(50vw - 580px));bottom:28px}
+html:not(.phone) .pc-launch.pc-logo:hover{box-shadow:0 8px 22px rgba(26,26,26,.24);outline:2px solid var(--ink);outline-offset:2px}
+.pc-launch.pc-logo .pl-logo{display:block;width:100%;height:100%}
+.pc-launch.pc-logo .pc-dot{position:absolute;top:-4px;right:-4px;width:12px;height:12px;background:var(--ink);border:2px solid var(--bg)}
+html.phone .ph-addbar.ph-logo{left:auto;right:16px;width:58px;height:58px;padding:0;border:0;background:none;box-shadow:0 6px 18px rgba(26,26,26,.18);display:block}
+html.phone .ph-addbar.ph-logo .pl-logo{display:block;width:100%;height:100%}
 </style>
 </head>
 <body>

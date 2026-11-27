@@ -89,7 +89,9 @@ function chatRender(){
   const sig = chatSig(); if(PCHAT.sig!==null && sig!==PCHAT.sig && chatActive() && !PCHAT.open){ PCHAT.open = true; lsSet('chatOpen','1'); }
   const fresh = sig!==PCHAT.sig; PCHAT.sig = sig;
   const hx = chatHelp();
-  if(!PCHAT.open){ host.innerHTML = '<button class="pc-launch" data-chatwin="open" title="Planner chat (⌘K)">'+(chatActive()||hx?'<span class="pc-dot"></span>':'')+'<span>'+(hx?'Get help · '+esc(hx.t.title.slice(0,40)):chatActive()?'Planner chat':'Tell the planner something')+'</span><span class="pc-k">⌘K</span></button>'; return; }
+  if(!PCHAT.open){   /* folded: the Planner logo as a square; a dot when the chat has something waiting (27 Nov 2026) */
+    const what = hx ? 'Get help · '+hx.t.title.slice(0,60) : chatActive() ? 'Planner chat: something is waiting' : 'Tell the planner something, add a task or a note';
+    host.innerHTML = '<button class="pc-launch pc-logo" data-chatwin="open" title="'+esc(what)+' (⌘K)" aria-label="'+esc(what)+'">'+PLANNER_LOGO+(chatActive()||hx?'<span class="pc-dot"></span>':'')+'</button>'; return; }
   const prev = host.querySelector('.pc-msgs'), atEnd = !prev || prev.scrollHeight - prev.scrollTop - prev.clientHeight < 60, keep = prev ? prev.scrollTop : 0;
   const ae = document.activeElement, fid = ae && host.contains(ae) && ae.id ? ae.id : '', fsel = fid && 'selectionStart' in ae ? [ae.selectionStart, ae.selectionEnd] : null;
   const wasHelp = !!host.querySelector('.pc-hctx');

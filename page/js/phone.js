@@ -71,7 +71,7 @@ function phLine(){
   if(stale && !s.error) line.push('Plan from the Mac '+esc(agoText(s.snapshotAt)));
   return line.length ? '<div class="ph-line">'+line.join(' · ')+'</div>' : '';
 }
-const phAddBar = () => (SYNC||{}).paired ? '<button class="ph-addbar" data-ph="add"><span>Add a task or a note for the Mac</span><i>'+PH_ICON.plus+'</i></button>' : '';
+const phAddBar = () => (SYNC||{}).paired ? '<button class="ph-addbar ph-logo" data-ph="add" aria-label="Add a task, a note for the Mac or a recording">'+PLANNER_LOGO+'</button>' : '';   /* the Planner logo as a square (27 Nov 2026) */
 
 /* ---------- task sheet (P2): everything a task can do on the phone ---------- */
 function phTaskSheet(){
