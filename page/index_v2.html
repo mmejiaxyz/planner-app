@@ -1752,6 +1752,12 @@ header.top .actbtn.on{color:var(--ink-2);background:var(--l1)}
 .actpop .act-bad .act-k{color:var(--red)}
 .actpop .act-none{display:block}
 .actpop .mono.faint{font-size:11px;white-space:nowrap}
+
+/* a heading never splits from its label or from the text after it; the phone's bubble quote stays inside the bubble */
+.bk .bk-flow .bk-h{break-inside:avoid;-webkit-column-break-inside:avoid;break-after:avoid;-webkit-column-break-after:avoid}
+.bk .bk-flow .bk-h.bk-h1 .bk-hnum{break-after:avoid}
+.bk .bk-bubble.bk-bq{width:min(336px,calc(100vw - 24px))}
+.bk .bk-bubble .bk-said{min-width:0;max-width:100%;box-sizing:border-box}
 </style>
 </head>
 <body>
