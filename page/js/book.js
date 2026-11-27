@@ -49,7 +49,8 @@ const BK_ICON = {
    A theme is page colours only (27 Nov 2026, the user's words: "too many reading modes, I dont want the font to change or the
    sizing, just the colors"): the font is Literata unless another is picked in Customize on the Mac; Bold and Focus, which only
    changed the font, are gone (a kept choice of them falls back to Original). On the phone the Aa menu has the text size and the
-   colours (27 Nov 2026, the user's question: "Why I cant change size in the ios app for the text?"), no Customize. */
+   colours (27 Nov 2026, the user's question: "Why I cant change size in the ios app for the text?"), and Customize again ("I want the
+   customization for the text that we used to have, remove calm"). Calm is gone (a kept choice falls back to Original). */
 const BK_FONTS = {
   literata:['Literata', "'Literata','Iowan Old Style',Georgia,serif"], charter:['Charter', "Charter,'Bitstream Charter',Georgia,serif"],
   iowan:['Iowan Old Style', "'Iowan Old Style',Georgia,serif"], newyork:['New York', "ui-serif,'New York',Georgia,serif"],
@@ -58,8 +59,7 @@ const BK_FONTS = {
 const BK_THEMES = {
   original:{name:'Original', bg:'#FDFCF8', ink:'#1A1A1A', font:'literata'},
   quiet:   {name:'Quiet',    bg:'#3F3F3C', ink:'#C9C8C3', font:'literata', dark:true},
-  paper:   {name:'Paper',    bg:'#F1F0EB', ink:'#1A1A1A', font:'literata'},
-  calm:    {name:'Calm',     bg:'#F4EFFA', ink:'#3F3F3C', font:'literata'}
+  paper:   {name:'Paper',    bg:'#F1F0EB', ink:'#1A1A1A', font:'literata'}
 };
 const BK_DEF = {size:PHONE ? 19 : 20, theme:'original', auto:true, font:'', bold:false, custom:false, lh:1.6, ls:0, ws:0, mg:0, cols:'auto', justify:false};
 function bkPref(){
@@ -231,8 +231,7 @@ function bkSkeleton(host){
 function bkApplyPref(){
   const host = document.getElementById('reader'); if(!host) return;
   const p = bkPref(), t = BK_THEMES[p.theme], night = p.auto && bkNight() && !t.dark;
-  const font = (!PHONE && BK_FONTS[p.font]) || BK_FONTS.literata;   /* themes never change the font; the phone has one look */
-  if(PHONE){ p.custom = false; p.justify = false; p.bold = false; p.boldSet = true; }   /* the phone keeps its text size (A / A), one font, no Customize */
+  const font = BK_FONTS[p.font] || BK_FONTS.literata;   /* themes never change the font: Literata unless one is picked in Customize */
   host.style.setProperty('--bk-size', p.size+'px');
   host.style.setProperty('--bk-font', font[1]);
   host.style.setProperty('--bk-weight', bkBoldOn(p) ? '600' : '400');
@@ -390,8 +389,10 @@ function bkReblock(ids){
 function bkLayout(){
   const view = document.getElementById('bk-view'), flow = document.getElementById('bk-flow'), host = document.getElementById('reader');
   if(!view || !flow || !host || !READ) return;
-  if(PHONE){   /* one page, Habla's margins */
-    const W = host.clientWidth, H = host.clientHeight, side = 26, gap = 52, top = 34, bottom = 44;
+  if(PHONE){   /* one page; margins as in Apple Books (27 Nov 2026, the user's screenshot), the text under the Dynamic Island and above the home bar */
+    const cs = getComputedStyle(document.documentElement), sat = parseFloat(cs.getPropertyValue('--sat'))||0, sab = parseFloat(cs.getPropertyValue('--sab'))||0;
+    const pp = bkPref(), mg = pp.custom ? pp.mg/100 : 0;
+    const W = host.clientWidth, H = host.clientHeight, side = Math.max(14, Math.round(34*(1+mg))), gap = 2*side, top = sat + 40, bottom = sab + 44;
     const viewW = W - 2*side;
     Object.assign(view.style, {left:side+'px', width:viewW+'px', top:top+'px', height:Math.max(200, H-top-bottom)+'px'});
     flow.style.columnCount = 1; flow.style.columnGap = gap+'px';
@@ -576,7 +577,7 @@ function bkThemesHTML(){
     + '<button class="bk-sun'+(p.auto?' on':'')+'" data-bk="autodark" role="switch" aria-checked="'+p.auto+'" title="Dark when the '+(PHONE?'iPhone':'Mac')+' is dark">'+BK_SUN+'</button></div>'
     + '<div class="bk-tiles">'+Object.keys(BK_THEMES).map(k=>{ const t = BK_THEMES[k], f = BK_FONTS.literata[1];
         return '<button class="bk-tile'+(p.theme===k?' on':'')+'" data-bk="theme" data-v="'+k+'" style="background:'+t.bg+';color:'+t.ink+'" aria-pressed="'+(p.theme===k)+'"><span class="aa" style="font-family:'+esc(f)+'">Aa</span><span style="font-family:'+esc(f)+'">'+t.name+'</span></button>'; }).join('')+'</div>'
-    + (PHONE ? '' : '<button class="bk-cust" data-bk="custom">'+BK_GEAR+'<span>Customize</span></button>')+'</div>';
+    + '<button class="bk-cust" data-bk="custom">'+BK_GEAR+'<span>Customize</span></button></div>';
 }
 function bkCustomHTML(){
   const p = bkPref(), t = BK_THEMES[p.theme];
@@ -591,7 +592,7 @@ function bkCustomHTML(){
     + sl('ls', 'CHARACTER SPACING', -5, 10, 1, p.ls, p.ls+'%')
     + sl('ws', 'WORD SPACING', -20, 60, 5, p.ws, p.ws+'%')
     + sl('mg', 'MARGINS', -50, 50, 5, p.mg, p.mg+'%')+'</div>'
-    + '<div class="bk-box"><div class="bk-cr"><span>Columns</span><select data-bkp="cols">'+[['auto','Auto'],['1','One'],['2','Two']].map(([v,l])=>'<option value="'+v+'"'+(p.cols===v?' selected':'')+'>'+l+'</option>').join('')+'</select></div>'
+    + '<div class="bk-box">'+(PHONE ? '' : '<div class="bk-cr"><span>Columns</span><select data-bkp="cols">'+[['auto','Auto'],['1','One'],['2','Two']].map(([v,l])=>'<option value="'+v+'"'+(p.cols===v?' selected':'')+'>'+l+'</option>').join('')+'</select></div>')
     + sw('justify', p.justify, 'Justify text')+'</div>'
     + '<button class="bk-cust bk-reset" data-bk="reset">Reset theme</button></div>';
 }

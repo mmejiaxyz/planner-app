@@ -1789,6 +1789,17 @@ html.phone .ph-addbar.ph-logo .pl-logo{display:block;width:100%;height:100%}
 html.phone nav.tabs .ph-navadd{flex:none;align-self:center;width:46px;height:46px;margin:6px 8px 6px 6px;padding:0;border:0;background:none;display:block;box-shadow:none}
 html.phone nav.tabs .ph-navadd .pl-logo{display:block;width:100%;height:100%}
 html:not(.phone) nav.tabs .ph-navadd{display:none}
+
+/* the iPhone uses the whole screen (27 Nov 2026): the web view runs under the status bar and the Dynamic Island, so each part keeps
+   its distance itself. The reader reads --sat and --sab for its page (book.js bkLayout). On an older phone app, whose view starts
+   below the island, the insets are 0 and nothing moves. */
+:root{--sat:env(safe-area-inset-top,0px);--sab:env(safe-area-inset-bottom,0px)}
+html.phone .wrap{padding-top:env(safe-area-inset-top)}
+html.phone .bk.bk-phone .bk-top{height:calc(52px + env(safe-area-inset-top));padding-top:env(safe-area-inset-top)}
+html.phone .bk.bk-phone .bk-pdf{top:calc(52px + env(safe-area-inset-top))}
+html.phone .bk.bk-phone .bk-menu{top:calc(56px + env(safe-area-inset-top))}
+html.phone .bk.bk-phone .bk-side{padding-top:env(safe-area-inset-top)}
+html.phone .ph-sheet{max-height:calc(88vh - env(safe-area-inset-top))}
 </style>
 </head>
 <body>

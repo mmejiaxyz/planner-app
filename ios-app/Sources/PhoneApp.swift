@@ -405,10 +405,11 @@ final class WebController: UIViewController, WKScriptMessageHandler, WKNavigatio
         web.navigationDelegate = self
         web.isOpaque = false; web.backgroundColor = view.backgroundColor; web.scrollView.backgroundColor = view.backgroundColor
         web.translatesAutoresizingMaskIntoConstraints = false
+        web.scrollView.contentInsetAdjustmentBehavior = .never   // the page uses env(safe-area-inset-*) (viewport-fit=cover); no second inset from iOS
         if #available(iOS 16.4, *) { web.isInspectable = true }
         view.addSubview(web)
         NSLayoutConstraint.activate([
-            web.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            web.topAnchor.constraint(equalTo: view.topAnchor),   // the whole screen (27 Nov 2026): the page keeps clear of the island itself
             web.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             web.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             web.trailingAnchor.constraint(equalTo: view.trailingAnchor),
